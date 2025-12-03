@@ -38,7 +38,7 @@ class BoxBoundary(Boundary):
         events: List[BaseEvent] = []
         # delegate to collider’s bounding radius / AABB as needed
         # for now, assume circle-like
-        r = body.collider.bounding_radius
+        r = body.collider.bounding_radius()
         pos = body.pos
         vel = body.vel
         

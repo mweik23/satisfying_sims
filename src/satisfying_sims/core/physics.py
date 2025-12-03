@@ -19,16 +19,16 @@ def step_physics(world: World, dt: float) -> List[BaseEvent]:
     events: List[BaseEvent] = []
 
     # Integrate
-    for b in world.bodies:
+    for b in world.bodies.values():
         acc = world.gravity - world.drag * b.vel
         b.vel += acc * dt
         b.pos += b.vel * dt
 
     # Boundary resolution
-    for b in world.bodies:
+    for b in world.bodies.values():
         events.extend(world.boundary.resolve_collision(b, world.restitution, world.time + dt))
 
-    # Body-body collisions
+    # Body-body collisions #TODO: fix
     n = len(world.bodies)
     for i in range(n):
         for j in range(i + 1, n):

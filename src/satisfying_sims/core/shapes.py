@@ -62,3 +62,24 @@ class Body:
         if isinstance(self.collider, CircleCollider):
             return self.collider.radius
         return self.collider.bounding_radius()
+
+def create_circle_body(
+    pos: np.ndarray,
+    vel: np.ndarray,
+    color: tuple = (0, 0, 0),
+    radius: float = 1.0,
+    mass: float = 1.0,
+    life: float = float("inf"),
+    state: dict | None = None,
+) -> Body:
+        body = Body(
+            id=None,
+            pos=pos.astype(float),
+            vel=vel.astype(float),
+            mass=float(mass),
+            color=color,
+            collider=CircleCollider(radius=float(radius)),
+            life=float(life),
+            state={} if state is None else dict(state),
+        )
+        return body

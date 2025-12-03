@@ -9,7 +9,7 @@ from .boundary import Boundary, BoxBoundary
 @dataclass
 class SimConfig:
     boundary: Boundary             # <— instead of width/height
-    gravity: tuple[float, float] = (0.0, 200.0)
+    gravity: tuple[float, float] = (0.0, 0.0)
     drag: float = 0.0
     restitution: float = 1.0
 

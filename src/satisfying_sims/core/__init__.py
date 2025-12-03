@@ -3,7 +3,7 @@
 from .config import SimConfig, make_world
 from .world import World
 from .physics import step_physics
-from .shapes import Body, CircleCollider
+from .shapes import Body, CircleCollider, create_circle_body
 from .boundary import Boundary, BoxBoundary
 from .rules import Rule, SpawnRandomShapes, LifetimeDecay, SplitOnHardCollision
 from .events import (
