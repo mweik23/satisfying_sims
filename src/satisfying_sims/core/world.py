@@ -52,14 +52,14 @@ class World:
                 fig = ax.figure
 
         # --- Draw bodies ---
-        for body in self.bodies.values():
+        for id, body in self.bodies.items():
             col = body.collider
             if hasattr(col, "radius"):  # CircleCollider
                 circ = Circle(
                     (body.pos[0], body.pos[1]),
                     col.radius,
                     edgecolor="black",
-                    facecolor=color_override if color_override is not None else body.color,
+                    facecolor=color_override[id] if color_override is not None else body.color,
                     linewidth=1.0,
                 )
                 ax.add_patch(circ)
