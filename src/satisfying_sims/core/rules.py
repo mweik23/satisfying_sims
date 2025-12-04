@@ -13,6 +13,7 @@ from .events import (
     DestroyEvent,
     SpawnEvent,
 )
+from .shapes import Body
 
 class Rule(ABC):
     """Base class for rules that modify the world based on events."""
@@ -28,7 +29,7 @@ class Rule(ABC):
 
 
 class LifetimeDecay(Rule):
-    """Decreases shape.life each frame; destroys when <= 0."""
+    """Decreases body.life each frame; destroys when <= 0."""
 
     def __init__(self, rate: float = 1.0):
         self.rate = rate
@@ -37,23 +38,22 @@ class LifetimeDecay(Rule):
         new_events: List[BaseEvent] = []
         to_destroy: List[int] = []
 
-        for s in world.shapes:
-            if s.life < float("inf"):
-                s.life -= self.rate * dt
-                if s.life <= 0:
-                    to_destroy.append(s.id)
-
-        for sid in to_destroy:
-            world.remove_shape_by_id(sid)
-            new_events.append(DestroyEvent(t=world.time, shape_id=sid, reason="lifetime"))
+        for b in world.bodies.values():
+            if b.life < float("inf"):
+                b.life -= self.rate * dt
+                if b.life <= 0:
+                    to_destroy.append(b.id)
+        for bid in to_destroy:
+            world.remove_body_by_id(bid)
+            new_events.append(DestroyEvent(t=world.time, body_id=bid, reason="lifetime"))
 
         return new_events
 
 
 class SplitOnHardCollision(Rule):
     """
-    When a collision impulse exceeds threshold, split each involved shape
-    into two smaller shapes (if large enough).
+    When a collision impulse exceeds threshold, split each involved body
+    into two smaller bodies (if large enough).
     """
 
     def __init__(self, impulse_threshold: float, min_radius: float = 8.0):
@@ -63,7 +63,7 @@ class SplitOnHardCollision(Rule):
     def apply(self, world: World, events: List[BaseEvent], dt: float) -> List[BaseEvent]:
         new_events: List[BaseEvent] = []
         to_destroy: set[int] = set()
-        new_shapes: List[Shape] = []
+        new_bodies: List[Body] = []
 
         # Find eligible collisions
         for e in events:
@@ -73,73 +73,73 @@ class SplitOnHardCollision(Rule):
                 continue
 
             ids = (e.a_id, e.b_id)
-            for sid in ids:
-                shape = _find_shape(world, sid)
-                if shape is None:
+            for bid in ids:
+                body = world.bodies.get(bid, None)
+                if body is None:
                     continue
-                if shape.radius <= self.min_radius:
+                if body.radius <= self.min_radius:
                     continue
 
                 # Mark for destruction & spawn two children
-                to_destroy.add(shape.id)
-                children = self._split_shape(world, shape)
-                new_shapes.extend(children)
+                to_destroy.add(body.id)
+                children = self._split_body(world, body)
+                new_bodies.extend(children)
 
-        # Apply changes to world
+        # Apply changes to world #TODO: is this correct? new bodies should be added even if no bodies are destroyed?
         if to_destroy:
-            world.shapes = [s for s in world.shapes if s.id not in to_destroy]
-            for s in new_shapes:
-                world.add_shape(s)
-                new_events.append(SpawnEvent(t=world.time, shape_id=s.id))
-            for sid in to_destroy:
-                new_events.append(DestroyEvent(t=world.time, shape_id=sid, reason="split"))
+            world.bodies = {bid: b for bid, b in world.bodies.items() if bid not in to_destroy}
+            for b in new_bodies:
+                world.add_body(b)
+                new_events.append(SpawnEvent(t=world.time, body_id=b.id))
+            for bid in to_destroy:
+                new_events.append(DestroyEvent(t=world.time, body_id=bid, reason="split"))
 
         return new_events
 
-    def _split_shape(self, world: World, s: Shape) -> List[Shape]:
-        """Return two new shapes derived from s but smaller."""
+    def _split_body(self, world: World, b: Body) -> List[Body]:
+        """Return two new bodies derived from b but smaller."""
         # Simple model: radius scaled, mass ~ area
-        new_radius = s.radius * 0.7
-        area_ratio = (new_radius ** 2) / (s.radius ** 2)  # ~ proportional to area
-        new_mass = max(0.1, s.mass * area_ratio)
+        new_radius = b.radius * 0.7
+        area_ratio = (new_radius ** 2) / (b.radius ** 2)  # ~ proportional to area
+        new_mass = max(0.1, b.mass * area_ratio)
 
-        children: List[Shape] = []
+        children: List[Body] = []
         for _ in range(2):
             angle = random.uniform(0, 2 * np.pi)
-            speed = np.linalg.norm(s.vel) * random.uniform(0.5, 1.5)
+            speed = np.linalg.norm(b.vel) * random.uniform(0.5, 1.5)
             vel = np.array([np.cos(angle), np.sin(angle)]) * speed
             offset = np.array([np.cos(angle), np.sin(angle)]) * new_radius
 
-            c = Shape(
+            c = Body(
                 id=world.new_id(),
-                kind=s.kind,
-                pos=s.pos + offset,
+                kind=b.kind,
+                pos=b.pos + offset,
                 vel=vel,
                 radius=new_radius,
                 mass=new_mass,
-                color=s.color,
-                life=s.life,
-                state=dict(s.state),
+                color=b.color,
+                life=b.life,
+                state=dict(b.state),
             )
             children.append(c)
         return children
 
 
-class SpawnRandomShapes(Rule):
+class SpawnRandomBodies(Rule):
     """
-    Spawns new shapes over time until max_shapes is reached.
+    Spawns new bodies over time until max_bodies is reached.
     Good as a basic "feeder" rule.
     """
 
     def __init__(
         self,
-        spawn_rate: float,        # shapes per second
-        max_shapes: int,
+        spawn_rate: float,        # bodies per second
+        max_bodies: int,
         radius_range=(8.0, 20.0),
         speed_range=(0.0, 150.0),
     ):
         self.spawn_rate = spawn_rate
-        self.max_shapes = max_shapes
+        self.max_bodies = max_bodies
         self.radius_range = radius_range
         self.speed_range = speed_range
         self._accum = 0.0
@@ -148,14 +148,15 @@ class SpawnRandomShapes(Rule):
         new_events: List[BaseEvent] = []
         self._accum += dt * self.spawn_rate
 
-        while self._accum >= 1.0 and len(world.shapes) < self.max_shapes:
+        while self._accum >= 1.0 and len(world.bodies) < self.max_bodies:
             self._accum -= 1.0
             s = self._spawn_one(world)
-            new_events.append(SpawnEvent(t=world.time, shape_id=s.id))
+            new_events.append(SpawnEvent(t=world.time, body_id=s.id))
 
         return new_events
 
-    def _spawn_one(self, world: World) -> Shape:
+    #TODO: fix for different boundary types and ensure that bodies spawn non-overlapping with other bodies
+    def _spawn_one(self, world: World) -> Body:
         w, h = world.width, world.height
 
         radius = random.uniform(*self.radius_range)
@@ -174,8 +175,8 @@ class SpawnRandomShapes(Rule):
             random.randint(80, 255),
             random.randint(80, 255),
         )
-
-        return world.create_shape(
+        #TODO: only have circle bodies for now which should be generated using create_circle_body()
+        return world.create_body(
             kind="circle",
             pos=np.array([x, y], dtype=float),
             vel=vel,
@@ -183,10 +184,5 @@ class SpawnRandomShapes(Rule):
             mass=mass,
             color=color,
         )
-
-
-def _find_shape(world: World, shape_id: int) -> Shape | None:
-    for s in world.shapes:
-        if s.id == shape_id:
-            return s
-    return None
+        
+#TODO: create collision spawning rule

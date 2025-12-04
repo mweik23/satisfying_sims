@@ -23,17 +23,17 @@ class CollisionEvent(BaseEvent):
 
 @dataclass
 class HitWallEvent(BaseEvent):
-    shape_id: int
+    body_id: int
     norm_vec: np.ndarray    # (2,) unit vector pointing into the world from wall
     impulse: float
 
 
 @dataclass
 class SpawnEvent(BaseEvent):
-    shape_id: int
+    body_id: int
 
 
 @dataclass
 class DestroyEvent(BaseEvent):
-    shape_id: int
+    body_id: int
     reason: str = "unknown"
