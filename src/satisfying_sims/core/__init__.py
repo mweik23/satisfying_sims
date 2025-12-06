@@ -1,7 +1,7 @@
 # src/satisfying_sims/core/__init__.py
 
 from .config import SimConfig, make_world
-from .world import World
+from .world import World, run_simulation
 from .physics import step_physics
 from .shapes import Body, CircleCollider, create_circle_body
 from .boundary import Boundary, BoxBoundary
@@ -24,6 +24,8 @@ __all__ = [
     "CircleCollider",
     "FrameSnapshot",
     "SimulationRecording",
+    "create_circle_body",
+    "run_simulation",
     "Boundary",
     "BoxBoundary",
     "Rule",
