@@ -1,15 +1,23 @@
 # src/satisfying_sims/core/world.py
 
 from __future__ import annotations
+from typing import TYPE_CHECKING, Sequence
+from .recording import SimulationRecording, FrameSnapshot
 from dataclasses import dataclass, field
 from typing import List
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
+from .rules import Rule
+from satisfying_sims.utils.plotting import get_color
 
 from .shapes import Body, CircleCollider
 from .boundary import Boundary
+from .physics import step_physics
+from .events import BaseEvent
 
+if TYPE_CHECKING:
+    from .rules import Rule
 
 @dataclass
 class World:
@@ -20,6 +28,7 @@ class World:
     bodies: dict[int, Body] = field(default_factory=dict)
     time: float = 0.0
     _next_id: int = 0
+    rules: List[Rule] = field(default_factory=list)
 
     def new_id(self) -> int:
         nid = self._next_id
@@ -37,8 +46,43 @@ class World:
 
     def remove_body_by_id(self, body_id: int) -> None:
         self.bodies = [b for b in self.bodies if b.id != body_id]
+    
+    def add_rule(self, rule: Rule) -> None:
+        self.rules.append(rule)
+    
+    def step(self, dt: float, max_rule_passes: int = 100) -> List[BaseEvent]:
+        """
+        Advance the world by dt using an event-queue system:
+        - Run physics to generate initial events.
+        - Repeatedly apply rules to *new* events only.
+        - Each event is processed by rules once.
+        """
+        physics_events = step_physics(self, dt=dt)
+        self.time += dt
+
+        pending_events: List[BaseEvent] = list(physics_events)
+        all_events: List[BaseEvent] = []
+
+        passes = 0
+        while pending_events and passes < max_rule_passes:
+            passes += 1
+
+            # Copy pending events and clear the queue
+            current_batch = list(pending_events)
+            pending_events.clear()
+
+            # Apply rules to the new events
+            for rule in self.rules:
+                produced = rule.apply(self, current_batch, dt)
+                if produced:
+                    pending_events.extend(produced)
+
+            # Mark current batch as processed
+            all_events.extend(current_batch)
+
+        return all_events
         
-    def plot(self, ax=None, delta=0, include_boundary=True, color_override=None):
+    def plot(self, ax=None, delta=0, include_boundary=True, gamma=0):
         """
         Plot the world: boundary in gray, bodies in their assigned colors.
         Coordinate system: x-right, y-down.
@@ -59,8 +103,8 @@ class World:
                     (body.pos[0], body.pos[1]),
                     col.radius,
                     edgecolor="black",
-                    facecolor=color_override[id] if color_override is not None else body.color,
-                    linewidth=1.0,
+                    facecolor=get_color(tuple(c/255 for c in body.color), gamma),
+                    linewidth=.35,
                 )
                 ax.add_patch(circ)
             else:
@@ -70,3 +114,37 @@ class World:
         ax.invert_yaxis()
 
         return fig, ax
+    
+
+def run_simulation(
+    world: World,
+    rules: Sequence[Rule],
+    n_steps: int,
+    dt: float,
+    *,
+    record_events: bool = True,
+) -> SimulationRecording:
+    """
+    Step the world forward n_steps and record snapshots for video/audio.
+    """
+    t = 0.0
+    recording = SimulationRecording()
+
+    for _ in range(n_steps):
+        # 1. Advance physics & get physics_events
+        physics_events = world.step(dt)  # or whatever your integrator API is
+        t += dt
+
+        # 2. Run rule engine on those events
+        all_events = world.apply_rules(rules, physics_events)
+
+        # 3. Record snapshot
+        frame_events = all_events if record_events else []
+        snapshot = FrameSnapshot(
+            t=t,
+            bodies=dict(world.bodies),  # or world.bodies.copy()
+            events=frame_events,
+        )
+        recording.add_frame(snapshot)
+
+    return recording

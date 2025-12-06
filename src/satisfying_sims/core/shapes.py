@@ -5,8 +5,9 @@ from dataclasses import dataclass, field
 from typing import Dict, Any, Tuple
 from abc import ABC, abstractmethod
 import numpy as np
-
+from typing import Union
 Color = Tuple[int, int, int]
+from satisfying_sims.utils.plotting import color_to_uint8
 
 
 # --------- Colliders (geometry only) ---------
@@ -66,7 +67,7 @@ class Body:
 def create_circle_body(
     pos: np.ndarray,
     vel: np.ndarray,
-    color: tuple = (0, 0, 0),
+    color: Union[tuple, str] = (0, 0, 0),
     radius: float = 1.0,
     mass: float = 1.0,
     life: float = float("inf"),
@@ -77,7 +78,7 @@ def create_circle_body(
             pos=pos.astype(float),
             vel=vel.astype(float),
             mass=float(mass),
-            color=color,
+            color=color_to_uint8(color) if type(color) is str else color,
             collider=CircleCollider(radius=float(radius)),
             life=float(life),
             state={} if state is None else dict(state),

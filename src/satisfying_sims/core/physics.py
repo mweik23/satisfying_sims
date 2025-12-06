@@ -3,10 +3,11 @@
 # src/simproject/core/physics.py
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
 from typing import List
 import numpy as np
-
-from .world import World
+if TYPE_CHECKING:
+    from .world import World
 from .shapes import Body, CircleCollider
 from .events import CollisionEvent, BaseEvent
 from .boundary import Boundary
@@ -40,7 +41,6 @@ def step_physics(world: World, dt: float) -> List[BaseEvent]:
 
     world.time += dt
     return events
-
 
 def _resolve_body_collision(world: World, a: Body, b: Body, t: float) -> CollisionEvent | None:
     """

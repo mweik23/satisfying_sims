@@ -48,7 +48,7 @@ class BoxBoundary(Boundary):
             pos[0] = r
             vel[0] = -restitution * vel[0]
             impulse = body.mass * abs(old_vx - vel[0])
-            events.append(HitWallEvent(t=t, shape_id=body.id, norm_vec=np.array([1.0, 0.0]), impulse=impulse))
+            events.append(HitWallEvent(t=t, body_id=body.id, norm_vec=np.array([1.0, 0.0]), impulse=impulse))
 
         # Right wall
         if pos[0] + r > self.width:
@@ -56,7 +56,7 @@ class BoxBoundary(Boundary):
             pos[0] = self.width - r
             vel[0] = -restitution * vel[0]
             impulse = body.mass * abs(old_vx - vel[0])
-            events.append(HitWallEvent(t=t, shape_id=body.id, norm_vec=np.array([-1.0, 0.0]), impulse=impulse))
+            events.append(HitWallEvent(t=t, body_id=body.id, norm_vec=np.array([-1.0, 0.0]), impulse=impulse))
 
         # Top wall
         if pos[1] - r < 0.0:
@@ -64,7 +64,7 @@ class BoxBoundary(Boundary):
             pos[1] = r
             vel[1] = -restitution * vel[1]
             impulse = body.mass * abs(old_vy - vel[1])
-            events.append(HitWallEvent(t=t, shape_id=body.id, norm_vec=np.array([0.0, 1.0]), impulse=impulse))
+            events.append(HitWallEvent(t=t, body_id=body.id, norm_vec=np.array([0.0, 1.0]), impulse=impulse))
 
         # Bottom wall
         if pos[1] + r > self.height:
@@ -72,7 +72,7 @@ class BoxBoundary(Boundary):
             pos[1] = self.height - r
             vel[1] = -restitution * vel[1]
             impulse = body.mass * abs(old_vy - vel[1])
-            events.append(HitWallEvent(t=t, shape_id=body.id, norm_vec=np.array([0.0, -1.0]), impulse=impulse))
+            events.append(HitWallEvent(t=t, body_id=body.id, norm_vec=np.array([0.0, -1.0]), impulse=impulse))
         return events
     
     

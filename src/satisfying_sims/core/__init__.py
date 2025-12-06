@@ -5,7 +5,8 @@ from .world import World
 from .physics import step_physics
 from .shapes import Body, CircleCollider, create_circle_body
 from .boundary import Boundary, BoxBoundary
-from .rules import Rule, SpawnRandomShapes, LifetimeDecay, SplitOnHardCollision
+from .rules import Rule, SpawnRandomBodies, LifetimeDecay, SplitOnHardCollision, SpawnOnCollision
+from .recording import FrameSnapshot, SimulationRecording
 from .events import (
     BaseEvent,
     CollisionEvent,
@@ -21,10 +22,13 @@ __all__ = [
     "step_physics",
     "Body",
     "CircleCollider",
+    "FrameSnapshot",
+    "SimulationRecording",
     "Boundary",
     "BoxBoundary",
     "Rule",
-    "SpawnRandomShapes",
+    "SpawnRandomBodies",
+    "SpawnOnCollision",
     "LifetimeDecay",
     "SplitOnHardCollision",
     "BaseEvent",
