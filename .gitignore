@@ -22,3 +22,4 @@ build/
 
 # Other project-specific ignores
 *.log
+results/

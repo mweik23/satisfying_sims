@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import List
 from .shapes import Body  # see below
 from .events import HitWallEvent, BaseEvent
+from satisfying_sims.utils.random import rng
 from dataclasses import dataclass
 import numpy as np
 # at top of file
@@ -23,6 +24,33 @@ class Boundary(ABC):
         Return any events describing what happened.
         """
         ...
+    @abstractmethod
+    def contains(self, pos: np.ndarray, radius: float = 0.0) -> bool:
+        """
+        Return True if a (possibly extended) point is fully inside the domain.
+
+        `radius` lets you check "does this circle of radius r fit inside?".
+        """
+        ...
+
+    @abstractmethod
+    def sample_position(
+        self,
+        radius: float = 0.0,
+    ) -> np.ndarray:
+        """
+        Sample a random position inside the domain (optionally padded by `radius`).
+        """
+        ...
+
+    # Optional helpers for renderers / presets
+
+    def bounds(self) -> tuple[float, float, float, float]:
+        """
+        Optionally provide (xmin, xmax, ymin, ymax) for camera setup / plotting.
+        Default raises if not meaningful.
+        """
+        raise NotImplementedError
 
 @dataclass
 class BoxBoundary(Boundary):
@@ -75,6 +103,25 @@ class BoxBoundary(Boundary):
             events.append(HitWallEvent(t=t, body_id=body.id, norm_vec=np.array([0.0, -1.0]), impulse=impulse))
         return events
     
+    def contains(self, pos: np.ndarray, radius: float = 0.0) -> bool:
+        x, y = float(pos[0]), float(pos[1])
+        return (
+            x - radius >= 0.0
+            and x + radius <= self.width
+            and y - radius >= 0.0
+            and y + radius <= self.height
+        )
+
+    def sample_position(
+        self,
+        radius: float = 0.0,
+    ) -> np.ndarray:
+        x = rng().uniform(0.0 + radius, self.width - radius)
+        y = rng().uniform(0.0 + radius, self.height - radius)
+        return np.array([x, y], dtype=float)
+
+    def bounds(self) -> tuple[float, float, float, float]:
+        return 0.0, self.width, 0.0, self.height
     
     def plot(self, ax=None, delta=0, **kwargs):
         """

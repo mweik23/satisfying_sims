@@ -4,8 +4,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from abc import ABC, abstractmethod
 from typing import List
+from dataclasses import asdict
 import random
 import numpy as np
+from satisfying_sims.utils.random import rng
 if TYPE_CHECKING:
     from .world import World
 
@@ -41,12 +43,14 @@ class SpawnOnCollision(Rule):
         i.e. in world coordinates it moves with v_cm.
     """
 
-    def __init__(self, offset_margin: float = 0):
+    def __init__(self, offset_margin: float = 0, vel_kick: float = 0.0):
         """
         offset_margin: extra distance to keep between the child and parents'
         surfaces, in the same units as positions/radii.
+        vel_kick: additional velocity to give the spawned child, in the direction perpendicular to the line of centers.
         """
         self.offset_margin = offset_margin
+        self.vel_kick = vel_kick
 
     def apply(self, world: World, events: List[BaseEvent], dt: float) -> List[BaseEvent]:
         new_events: List[BaseEvent] = []
@@ -67,7 +71,7 @@ class SpawnOnCollision(Rule):
             # 2) Choose where to put it and how it moves
             pos, vel = self._choose_pos_velocity(world, a, b, child_radius, e)
 
-            # 3) Actually create the body in the world
+            # 3) Actually create the body in the world #TODO: expand to support different kinds of bodies
             child = create_circle_body(
                 pos=pos,
                 vel=vel,
@@ -76,12 +80,15 @@ class SpawnOnCollision(Rule):
                 color=props["color"],
             ) if props["kind"] == "circle" else None
             if child is not None:
-                world.add_body(child)
+                try:
+                    world.add_body(child)
+                except ValueError as ex:
+                    self._raise_spawn_error(child, e, world, ex)
 
             # Optionally let subclasses tweak the created body
             self._postprocess_child(world, child, a, b, e)
 
-            new_events.append(SpawnEvent(t=world.time, body_id=child.id))
+            new_events.append(SpawnEvent(t=world.time, child_id=child.id, reason="collision_spawn"))
 
         return new_events
 
@@ -92,6 +99,7 @@ class SpawnOnCollision(Rule):
         Decide what properties the child should inherit.
         Default: copy from body A.
         """
+        #TODO: expand to support different kinds of bodies
         return {
             "kind": getattr(a, "kind", "circle"),
             "radius": a.collider.radius,
@@ -104,7 +112,7 @@ class SpawnOnCollision(Rule):
         world: World,
         a: Body,
         b: Body,
-        child_radius: float,
+        child_radius: float, # TODO: should be bounding radius of child collider when I expand beyond circles
         e: CollisionEvent,
     ):
         """
@@ -136,8 +144,8 @@ class SpawnOnCollision(Rule):
         perp = np.array([-direction[1], direction[0]], dtype=float)
         perp /= float(np.linalg.norm(perp))
 
-        r_a = a.collider.radius
-        r_b = b.collider.radius
+        r_a = a.collider.bounding_radius() # use bounding_radius to be safe with different collider types
+        r_b = b.collider.bounding_radius()
         R_max = max(r_a, r_b)
 
         # Distance from mid so we clear both parents:
@@ -145,9 +153,15 @@ class SpawnOnCollision(Rule):
         L = R_max + child_radius + self.offset_margin
 
         # Randomly choose side (+perp or -perp)
-        sign = random.choice((-1.0, 1.0))
-        child_pos = mid + sign * L * perp
-
+        options = np.array([-1.0, 1.0])
+        sign = rng().choice(options, replace=False)
+        perp *= sign
+        child_pos = mid + L * perp
+        valid = world.boundary.contains(pos=child_pos, radius=child_radius) #TODO: make bounding_radius when expanding beyond circles
+        if not valid:
+            # Try the other side
+            perp *= -1.0
+            child_pos = mid + L * perp
         # Center-of-mass velocity
         vel_a = np.asarray(a.vel, dtype=float)
         vel_b = np.asarray(b.vel, dtype=float)
@@ -160,7 +174,7 @@ class SpawnOnCollision(Rule):
         else:
             v_cm = 0.5 * (vel_a + vel_b)
 
-        child_vel = v_cm
+        child_vel = v_cm + self.vel_kick * perp
         return child_pos, child_vel
 
 
@@ -177,7 +191,71 @@ class SpawnOnCollision(Rule):
         Default: do nothing.
         """
         pass
+    def _raise_spawn_error(self, child, event, world, original_exc):
+        """
+        Build and raise a detailed debugging error message when a spawned body
+        cannot be placed inside the world boundary.
+        """
+        # -- Event info --
+        event_info = "\n".join(
+            f"  {k}: {v}" for k, v in asdict(event).items()
+        )
 
+        # -- Parent bodies --
+        a_id = getattr(event, "a_id", None)
+        b_id = getattr(event, "b_id", None)
+
+        body_a = world.bodies.get(a_id)
+        body_b = world.bodies.get(b_id)
+
+        if body_a is not None:
+            body_a_info = "\n".join(
+                f"  {k}: {v}" for k, v in asdict(body_a).items()
+            )
+        else:
+            body_a_info = "  <missing>"
+
+        if body_b is not None:
+            body_b_info = "\n".join(
+                f"  {k}: {v}" for k, v in asdict(body_b).items()
+            )
+        else:
+            body_b_info = "  <missing>"
+
+        # -- Child body info --
+        child_info = "\n".join([
+            f"  pos: {child.pos}",
+            f"  vel: {child.vel}",
+            f"  radius: {child.collider.bounding_radius()}",
+            f"  mass: {child.mass}",
+        ])
+
+        # -- Boundary info --
+        boundary = world.boundary
+        boundary_info = "\n".join([
+            f"  width: {boundary.width}",
+            f"  height: {boundary.height}",
+        ])
+
+        # -- Build final message --
+        msg = (
+            "SpawnOnCollision produced an invalid child body placement.\n"
+            f"Original error: {original_exc}\n\n"
+
+            "CollisionEvent:\n"
+            f"{event_info}\n\n"
+
+            f"Body A (id={a_id}):\n{body_a_info}\n\n"
+            f"Body B (id={b_id}):\n{body_b_info}\n\n"
+
+            "Child Body:\n"
+            f"{child_info}\n\n"
+
+            "World Boundary:\n"
+            f"{boundary_info}"
+        )
+
+        raise ValueError(msg) from original_exc
 
 class LifetimeDecay(Rule):
     """Decreases body.life each frame; destroys when <= 0."""

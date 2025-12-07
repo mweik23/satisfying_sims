@@ -12,7 +12,13 @@ from .renderer import MatplotlibRenderer, RendererConfig
 
 if TYPE_CHECKING:
     from satisfying_sims.core import SimulationRecording, World
-    
+
+import shutil
+
+if shutil.which("ffmpeg") is None:
+    raise RuntimeError(
+        "ffmpeg not found. Install with: conda install -c conda-forge ffmpeg"
+    )
 def select_frames_for_fps(recording: SimulationRecording, fps: int) -> list[SimulationRecording]:
     target_dt = 1.0 / fps
     frames = recording.frames

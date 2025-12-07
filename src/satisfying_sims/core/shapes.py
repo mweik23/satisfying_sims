@@ -8,6 +8,7 @@ import numpy as np
 from typing import Union
 Color = Tuple[int, int, int]
 from satisfying_sims.utils.plotting import color_to_uint8
+from .recording import ColliderSnapshot
 
 
 # --------- Colliders (geometry only) ---------
@@ -20,6 +21,11 @@ class Collider(ABC):
         """Radius of sphere that encloses this shape (for cheap broad-phase tests)."""
         ...
 
+    def to_snapshot(self) -> ColliderSnapshot:
+        return ColliderSnapshot(
+            kind=type(self).__name__,
+            attrs={"bounding_radius": float(self.bounding_radius())},
+        )
 
 @dataclass
 class CircleCollider(Collider):
@@ -27,8 +33,12 @@ class CircleCollider(Collider):
 
     def bounding_radius(self) -> float:
         return self.radius
-
-
+    
+    def to_snapshot(self) -> ColliderSnapshot:
+        return ColliderSnapshot(
+            kind="CircleCollider",
+            attrs={"radius": float(self.radius)},
+        )
 # Placeholder for future expansion
 # @dataclass
 # class PolygonCollider(Collider):

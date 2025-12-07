@@ -15,6 +15,7 @@ from .shapes import Body, CircleCollider
 from .boundary import Boundary
 from .physics import step_physics
 from .events import BaseEvent
+from .recording import snapshot_world
 
 if TYPE_CHECKING:
     from .rules import Rule
@@ -36,6 +37,8 @@ class World:
         return nid
 
     def add_body(self, body: Body) -> None:
+        if not self.boundary.contains(body.pos, radius=body.collider.bounding_radius()):
+            raise ValueError("Body placed outside boundary")
         if body.id is None:
             body.id = self.new_id()
         elif body.id in self.bodies:
@@ -58,7 +61,6 @@ class World:
         - Each event is processed by rules once.
         """
         physics_events = step_physics(self, dt=dt)
-        self.time += dt
 
         pending_events: List[BaseEvent] = list(physics_events)
         all_events: List[BaseEvent] = []
@@ -115,10 +117,8 @@ class World:
 
         return fig, ax
     
-
 def run_simulation(
     world: World,
-    rules: Sequence[Rule],
     n_steps: int,
     dt: float,
     *,
@@ -127,24 +127,12 @@ def run_simulation(
     """
     Step the world forward n_steps and record snapshots for video/audio.
     """
-    t = 0.0
     recording = SimulationRecording()
 
     for _ in range(n_steps):
-        # 1. Advance physics & get physics_events
-        physics_events = world.step(dt)  # or whatever your integrator API is
-        t += dt
-
-        # 2. Run rule engine on those events
-        all_events = world.apply_rules(rules, physics_events)
-
-        # 3. Record snapshot
+        all_events = world.step(dt)  # or whatever your integrator API is
         frame_events = all_events if record_events else []
-        snapshot = FrameSnapshot(
-            t=t,
-            bodies=dict(world.bodies),  # or world.bodies.copy()
-            events=frame_events,
-        )
+        snapshot = snapshot_world(world, t=world.time, events=frame_events)
         recording.add_frame(snapshot)
 
     return recording

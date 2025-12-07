@@ -10,8 +10,9 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 
 if TYPE_CHECKING:
-    from satisfying_sims.core.recording import FrameSnapshot, BodySnapshot
-    from satisfying_sims.core.world import World
+    # Adjust these imports to match your actual core API:
+    # FrameSnapshot should contain BodySnapshot objects in .bodies.values()
+    from satisfying_sims.core import FrameSnapshot, World, Body  # Body = BodySnapshot
 
 
 @dataclass
@@ -31,10 +32,10 @@ class MatplotlibRenderer:
 
     def render_snapshot(
         self,
-        snapshot: "FrameSnapshot",
+        snapshot: FrameSnapshot,
         *,
         ax: Axes,
-        world_for_boundary: "World" | None = None,
+        world_for_boundary: World | None = None,
     ) -> None:
         """
         Draw a single frame snapshot onto the given Axes.
@@ -59,31 +60,31 @@ class MatplotlibRenderer:
         for spine in ax.spines.values():
             spine.set_visible(self.config.frame_on)
 
-    def _draw_boundary(self, world: "World", ax: Axes) -> None:
+    def _draw_boundary(self, world: World, ax: Axes) -> None:
         boundary = getattr(world, "boundary", None)
         if boundary is None:
             return
         plot_fn = getattr(boundary, "plot", None)
         if callable(plot_fn):
-            pad = 0.01 * max(boundary.width, boundary.height)
-            plot_fn(ax=ax, delta=pad, edgecolor=self.config.boundary_color)
+            plot_fn(ax=ax, edgecolor=self.config.boundary_color)
 
-    def _draw_body(self, body: "BodySnapshot", ax: Axes) -> None:
+    def _draw_body(self, body: "Body", ax: Axes) -> None:
         """
         Draw a body snapshot.
 
         Expects `body` to have:
           - pos: array-like shape (2,)
-          - color: Matplotlib-understood color
-          - collider: ColliderSnapshot with:
-                kind: str
-                attrs: dict, e.g. {"radius": 0.3}
+          - color: something Matplotlib can interpret as a color
+          - collider: an object with:
+                kind: str  (e.g. "CircleCollider")
+                attrs: dict with shape parameters, e.g. {"radius": 0.3}
         """
         pos = np.asarray(body.pos, dtype=float)
         fc = getattr(body, "color", "C0")
 
         collider = getattr(body, "collider", None)
         if collider is None:
+            # Fallback: tiny dot if no collider info
             circle = plt.Circle((pos[0], pos[1]), 0.02, fc=fc, ec=None)
             ax.add_patch(circle)
             return
@@ -92,13 +93,18 @@ class MatplotlibRenderer:
         attrs = getattr(collider, "attrs", {}) or {}
 
         if kind == "CircleCollider":
+            # The collider snapshot should have attrs["radius"]
             radius = float(attrs.get("radius", 0.02))
             circle = plt.Circle((pos[0], pos[1]), radius, fc=fc, ec=None)
             ax.add_patch(circle)
+
         else:
-            # Fallback: bounding_radius if present, else a tiny dot
+            # Generic fallback: use bounding_radius if present, otherwise a small dot
             radius = float(
-                attrs.get("bounding_radius", attrs.get("radius", 0.02))
+                attrs.get(
+                    "bounding_radius",
+                    attrs.get("radius", 0.02),
+                )
             )
             circle = plt.Circle((pos[0], pos[1]), radius, fc=fc, ec=None)
             ax.add_patch(circle)
