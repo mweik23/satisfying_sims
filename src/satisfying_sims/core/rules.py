@@ -18,6 +18,7 @@ from .events import (
     SpawnEvent,
 )
 from .shapes import Body, create_circle_body
+from .physics import get_penetration
 
 class Rule(ABC):
     """Base class for rules that modify the world based on events."""
@@ -70,7 +71,9 @@ class SpawnOnCollision(Rule):
 
             # 2) Choose where to put it and how it moves
             pos, vel = self._choose_pos_velocity(world, a, b, child_radius, e)
-
+            if pos is None:
+                # Couldn't find valid placement
+                continue
             # 3) Actually create the body in the world #TODO: expand to support different kinds of bodies
             child = create_circle_body(
                 pos=pos,
@@ -157,11 +160,12 @@ class SpawnOnCollision(Rule):
         sign = rng().choice(options, replace=False)
         perp *= sign
         child_pos = mid + L * perp
-        valid = world.boundary.contains(pos=child_pos, radius=child_radius) #TODO: make bounding_radius when expanding beyond circles
-        if not valid:
+        if not self._valid_child_position(world, child_pos, child_radius): #TODO: make bounding_radius when expanding beyond circles
             # Try the other side
             perp *= -1.0
             child_pos = mid + L * perp
+            if not self._valid_child_position(world, child_pos, child_radius):
+                return None, None
         # Center-of-mass velocity
         vel_a = np.asarray(a.vel, dtype=float)
         vel_b = np.asarray(b.vel, dtype=float)
@@ -177,6 +181,15 @@ class SpawnOnCollision(Rule):
         child_vel = v_cm + self.vel_kick * perp
         return child_pos, child_vel
 
+    def _valid_child_position(self, world: World, child_pos: np.ndarray, child_radius: float) -> bool:
+        inbounds = world.boundary.contains(pos=child_pos, radius=child_radius)
+        overlapping = False
+        for b in world.bodies.values():
+            penetration, _ = get_penetration(child_pos, child_radius, b.pos, b.collider.bounding_radius()) #conservative
+            if penetration is not None and penetration > 0:
+                overlapping = True
+                break
+        return inbounds and not overlapping
 
     def _postprocess_child(
         self,

@@ -43,6 +43,7 @@ def render_video(
     fps: int = 60,
     renderer: MatplotlibRenderer | None = None,
     world_for_boundary: World | None = None,
+    bitrate: int = 8000,
 ) -> None:
     """
     Render a SimulationRecording to an MP4 using Matplotlib + ffmpeg.
@@ -61,7 +62,7 @@ def render_video(
     writer = FFMpegWriter(
         fps=fps,
         metadata={"artist": "satisfying_sims"},
-        bitrate=8000,
+        bitrate=bitrate,
     )
 
     frames_to_render = select_frames_for_fps(recording, fps)

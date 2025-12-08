@@ -28,7 +28,8 @@ def main():
     # 2. Run simulation and record
     n_steps = int(args.duration * physics_rate)  # physics at physics_rate Hz
     dt = 1 / physics_rate  # physics at physics_rate Hz
-    recording = run_simulation(world, n_steps, dt)
+    recording = run_simulation(world, n_steps, dt, log_interval=int(physics_rate))
+    print('Simulation completed. Rendering video...')
     recording.meta = {
         "sim_config": asdict(sim_config),   # if you’re using dataclasses
         "seed": args.seed,
@@ -45,6 +46,7 @@ def main():
         output_path=output_path,
         fps=args.frame_rate,
         world_for_boundary=world,
+        bitrate=args.bitrate,
     )
 
 

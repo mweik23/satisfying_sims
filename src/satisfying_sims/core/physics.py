@@ -29,12 +29,12 @@ def step_physics(world: World, dt: float) -> List[BaseEvent]:
     for b in world.bodies.values():
         events.extend(world.boundary.resolve_collision(b, world.restitution, world.time + dt))
 
-    # Body-body collisions #TODO: fix
-    n = len(world.bodies)
+    bodies = list(world.bodies.values())   # snapshot of bodies for this step
+    n = len(bodies)
     for i in range(n):
         for j in range(i + 1, n):
-            a = world.bodies[i]
-            b = world.bodies[j]
+            a = bodies[i]
+            b = bodies[j]
             ev = _resolve_body_collision(world, a, b, world.time + dt)
             if ev is not None:
                 events.append(ev)
@@ -58,26 +58,16 @@ def _resolve_body_collision(world: World, a: Body, b: Body, t: float) -> Collisi
 
 
 def _circle_circle_collision(world: World, a: Body, b: Body, t: float) -> CollisionEvent | None:
-    delta = b.pos - a.pos
-    dist = float(np.linalg.norm(delta))
-    ra = a.collider.radius
-    rb = b.collider.radius
-    radius_sum = ra + rb
-
-    if dist == 0.0:
-        n = np.array([1.0, 0.0])
-    else:
-        n = delta / dist
-
-    if dist >= radius_sum:
+    penetration, n = get_penetration(a.pos, a.collider.radius, b.pos, b.collider.radius)
+    if penetration is None or penetration <= 0:
         return None
-
+    
     # relative velocity along normal
     rv = b.vel - a.vel
     vel_along_normal = float(np.dot(rv, n))
 
     if vel_along_normal > 0:
-        _positional_correction(a, b, n, radius_sum - dist)
+        _positional_correction(a, b, n, penetration)
         return None
 
     e = world.restitution
@@ -93,11 +83,10 @@ def _circle_circle_collision(world: World, a: Body, b: Body, t: float) -> Collis
     impulse_vec = j * n
     a.vel -= inv_mass_a * impulse_vec
     b.vel += inv_mass_b * impulse_vec
-
-    penetration = radius_sum - dist
+    
     _positional_correction(a, b, n, penetration)
 
-    contact_point = a.pos + n * ra
+    contact_point = a.pos + n * a.collider.radius
 
     return CollisionEvent(
         t=t,
@@ -107,7 +96,18 @@ def _circle_circle_collision(world: World, a: Body, b: Body, t: float) -> Collis
         impulse=abs(j),
         relative_speed=abs(vel_along_normal),
     )
-
+def get_penetration(a_pos, a_radius, b_pos, b_radius) -> float:
+    delta = b_pos - a_pos
+    dist = float(np.linalg.norm(delta))
+    radius_sum = a_radius + b_radius
+    penetration = radius_sum - dist
+    if penetration <= 0:
+        return penetration, None
+    if dist == 0.0:
+        n = np.array([1.0, 0.0])
+    else:
+        n = delta / dist
+    return penetration, n
 
 def _positional_correction(a: Body, b: Body, n: np.ndarray, penetration: float) -> None:
     if penetration <= 0:

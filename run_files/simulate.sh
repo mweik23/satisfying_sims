@@ -1,5 +1,5 @@
 
-python scripts/render_video.py --exp_name my_experiment --seed 2 --frame_rate 60 --duration 17.0 \
+python scripts/render_video.py --exp_name my_experiment --seed 2 --frame_rate 60 --duration 23.0 \
     --outdir results --physics_rate_request 600 --rules '{"SpawnOnCollision": {"vel_kick": 15.0}}' \
     --boundary '{"type": "BoxBoundary", "params": {"width": 100.0, "height": 100.0}}' \
-    --n_bodies 2 --body_color blue --sigma_v 20.0 --radius 3.0
+    --n_bodies 2 --body_color blue --sigma_v 20.0 --radius 3.0 --bitrate 2000

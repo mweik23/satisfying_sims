@@ -27,6 +27,8 @@ def build_parser():
                         help='standard deviation of the initial velocity (default: 5.0)')
     parser.add_argument('--radius', type=float, default=1.0, metavar='N',
                         help='radius of the bodies in the simulation (default: 1.0)')
+    parser.add_argument('--bitrate', type=int, default=8000, metavar='N',
+                        help='bitrate for the rendered video in kbps (default: 8000)')
     return parser
 
 '''

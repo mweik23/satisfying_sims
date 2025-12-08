@@ -121,6 +121,7 @@ def run_simulation(
     world: World,
     n_steps: int,
     dt: float,
+    log_interval: int = 600,
     *,
     record_events: bool = True,
 ) -> SimulationRecording:
@@ -129,10 +130,12 @@ def run_simulation(
     """
     recording = SimulationRecording()
 
-    for _ in range(n_steps):
+    for step in range(n_steps):
         all_events = world.step(dt)  # or whatever your integrator API is
         frame_events = all_events if record_events else []
         snapshot = snapshot_world(world, t=world.time, events=frame_events)
         recording.add_frame(snapshot)
+        if (step + 1) % log_interval == 0:
+            print(f"Simulated {world.time:.3f} seconds / {n_steps*dt:.3f} seconds...")
 
     return recording
