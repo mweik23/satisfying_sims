@@ -39,8 +39,8 @@ def main():
     # 3. Render to video at 60 fps (slo-mo or real-time as you like)
     exp_dir = PROJECT_ROOT / args.outdir / args.exp_name
     exp_dir.mkdir(exist_ok=True, parents=True)
-    output_path = exp_dir / "simulation_video.mp4"
-    recording.save(exp_dir / "simulation_recording.pkl")
+    output_path = exp_dir / "video.mp4"
+    recording.save(exp_dir / "recording.pkl.xz")
     render_video(
         recording,
         output_path=output_path,

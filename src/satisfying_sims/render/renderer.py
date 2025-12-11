@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 
 if TYPE_CHECKING:
-    from satisfying_sims.core.recording import FrameSnapshot, BodySnapshot
+    from satisfying_sims.core.recording import FrameSnapshot, BodyStaticSnapshot, BodyStateSnapshot
     from satisfying_sims.core.world import World
 
 
@@ -32,6 +32,7 @@ class MatplotlibRenderer:
     def render_snapshot(
         self,
         snapshot: "FrameSnapshot",
+        body_static: dict[int, BodyStaticSnapshot] | None = None,
         *,
         ax: Axes,
         world_for_boundary: "World" | None = None,
@@ -45,9 +46,12 @@ class MatplotlibRenderer:
         if world_for_boundary is not None:
             self._draw_boundary(world_for_boundary, ax)
 
-        for body in snapshot.bodies.values():
-            self._draw_body(body, ax)
-
+        for body_id, state in snapshot.bodies.items():
+            self._draw_body(
+                state=state,
+                body_static=body_static[body_id] or None,
+                ax=ax
+            )
     # --- helpers ---
 
     def _setup_axes(self, ax: Axes) -> None:
@@ -68,7 +72,54 @@ class MatplotlibRenderer:
             pad = 0.01 * max(boundary.width, boundary.height)
             plot_fn(ax=ax, delta=pad, edgecolor=self.config.boundary_color)
 
-    def _draw_body(self, body: "BodySnapshot", ax: Axes) -> None:
+    def _draw_body(
+        self,
+        state: "BodyStateSnapshot",
+        body_static: "BodyStaticSnapshot",
+        ax: Axes,
+    ) -> None:
+        """
+        Draw a body using the new snapshot structure.
+
+        Parameters
+        ----------
+        state : BodyStateSnapshot
+            Per-frame dynamic state (pos, vel).
+        body_static : BodyStaticSnapshot
+            Global static info stored once per recording.
+        ax : matplotlib.axes.Axes
+            Target axes.
+        """
+
+        # --- dynamic state ---
+        pos = np.asarray(state.pos, dtype=float)
+
+        # --- static visual attributes ---
+        fc = body_static.color                   # already normalized (0–1) tuple
+        collider = body_static.collider          # ColliderSnapshot
+
+        if collider is None:
+            # Fallback dot
+            circle = plt.Circle((pos[0], pos[1]), 0.02, fc=fc, ec=None)
+            ax.add_patch(circle)
+            return
+
+        kind = collider.kind
+        attrs = collider.attrs or {}
+
+        # --- Circle collider ---
+        if kind == "CircleCollider":
+            radius = float(attrs.get("radius", 0.02))
+            circle = plt.Circle((pos[0], pos[1]), radius, fc=fc, ec=None)
+            ax.add_patch(circle)
+            return
+
+        # --- Fallback for unknown collider types ---
+        radius = float(attrs.get("bounding_radius", attrs.get("radius", 0.02)))
+        circle = plt.Circle((pos[0], pos[1]), radius, fc=fc, ec=None)
+        ax.add_patch(circle)
+
+    def _draw_body_old(self, body: "BodyStateSnapshot", ax: Axes) -> None:
         """
         Draw a body snapshot.
 

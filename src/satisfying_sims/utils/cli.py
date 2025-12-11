@@ -29,11 +29,40 @@ def build_parser():
                         help='radius of the bodies in the simulation (default: 1.0)')
     parser.add_argument('--bitrate', type=int, default=8000, metavar='N',
                         help='bitrate for the rendered video in kbps (default: 8000)')
+    parser.add_argument(
+    "--audio-samples-dir",
+    type=str,
+    default=None,
+    help="Directory of WAV samples for building soundtrack. If omitted, no audio is added.",
+    )
+    parser.add_argument(
+        "--audio-sr",
+        type=int,
+        default=44100,
+        help="Audio sample rate for soundtrack.",
+    )
+    parser.add_argument(
+        "--audio-tail",
+        type=float,
+        default=0.3,
+        help="Extra tail seconds after recording end in soundtrack.",
+    )
+    parser.add_argument(
+    "--sample-map",
+    type=json.loads,
+    default=None,
+    help=(
+        "JSON dict mapping event types to sample names, "
+        'e.g. \'{"CollisionEvent": "metal_clang", "BoundaryCollisionEvent": "wood_thud"}\''
+    ),
+)
     return parser
 
 '''
 usage: python render_video.py --exp_name my_experiment --seed 42 --frame_rate 60 --duration 15.0 \
     --outdir results --physics_rate_request 600 --rules '{"SpawnOnCollision": {}}' \
         --boundary '{"type": "BoxBoundary", "params": {"width": 100.0, "height": 100.0}}' \
-            --n_bodies 20 --body_color blue --sigma_v 10.0 --radius 1.0
+            --n_bodies 20 --body_color blue --sigma_v 10.0 --radius 1.0 --bitrate 8000 \
+                --audio-samples-dir assets/audio --audio-sr 44100 --audio-tail 0.5 \
+                    --sample-map '{"CollisionEvent": "ice_crack", "HitWallEvent": "bloop"}'
 '''

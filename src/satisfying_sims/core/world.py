@@ -15,7 +15,7 @@ from .shapes import Body, CircleCollider
 from .boundary import Boundary
 from .physics import step_physics
 from .events import BaseEvent
-from .recording import snapshot_world
+from .recording import snapshot_world, BodyStaticSnapshot
 
 if TYPE_CHECKING:
     from .rules import Rule
@@ -129,12 +129,16 @@ def run_simulation(
     Step the world forward n_steps and record snapshots for video/audio.
     """
     recording = SimulationRecording()
-
+    body_static: dict[int, BodyStaticSnapshot] = {}
     for step in range(n_steps):
         all_events = world.step(dt)  # or whatever your integrator API is
         frame_events = all_events if record_events else []
-        snapshot = snapshot_world(world, t=world.time, events=frame_events)
+        snapshot = snapshot_world(world, 
+                                  t=world.time, 
+                                  events=frame_events,
+                                  body_static_registry=body_static)
         recording.add_frame(snapshot)
+        recording.body_static.update(body_static)
         if (step + 1) % log_interval == 0:
             print(f"Simulated {world.time:.3f} seconds / {n_steps*dt:.3f} seconds...")
 
