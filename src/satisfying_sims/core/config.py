@@ -5,6 +5,7 @@ import numpy as np
 from .world import World
 from .boundary import Boundary, BoxBoundary
 from typing import List, Optional
+from satisfying_sims.themes.base import BodyTheme
 
 
 @dataclass
@@ -18,6 +19,7 @@ class SimConfig:
     body_color: str = "blue"
     sigma_v: float = 5.0
     radius: float = 1.0
+    body_theme: str | None = None
     
     @classmethod
     def from_args(cls, args) -> "SimConfig":

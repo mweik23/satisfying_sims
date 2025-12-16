@@ -9,7 +9,7 @@ from typing import Union
 Color = Tuple[int, int, int]
 from satisfying_sims.utils.plotting import color_to_uint8
 from .recording import ColliderSnapshot
-
+from satisfying_sims.themes.base import BodyTheme
 
 # --------- Colliders (geometry only) ---------
 
@@ -65,6 +65,8 @@ class Body:
     color: Color
     collider: Collider
     life: float = float("inf")
+    theme: BodyTheme | None = None
+    collision_count: int = 0
     state: Dict[str, Any] = field(default_factory=dict)
 
     # Convenience for current circle-only world
@@ -78,6 +80,7 @@ def create_circle_body(
     pos: np.ndarray,
     vel: np.ndarray,
     color: Union[tuple, str] = (0, 0, 0),
+    theme: BodyTheme | None = None,
     radius: float = 1.0,
     mass: float = 1.0,
     life: float = float("inf"),
@@ -89,6 +92,7 @@ def create_circle_body(
             vel=vel.astype(float),
             mass=float(mass),
             color=color_to_uint8(color) if type(color) is str else color,
+            theme = theme,
             collider=CircleCollider(radius=float(radius)),
             life=float(life),
             state={} if state is None else dict(state),

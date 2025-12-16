@@ -151,7 +151,6 @@ class BoxBoundary(Boundary):
             (0.0, 0.0),
             self.width,
             self.height,
-            fill=False,
             **kwargs,
         )
         ax.add_patch(rect)

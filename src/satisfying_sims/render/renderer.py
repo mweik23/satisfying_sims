@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
+import importlib
+from satisfying_sims.themes import BodyTheme
 
 if TYPE_CHECKING:
     from satisfying_sims.core.recording import FrameSnapshot, BodyStaticSnapshot, BodyStateSnapshot
@@ -19,16 +21,28 @@ class RendererConfig:
     figsize: tuple[float, float] = (6.0, 6.0)
     dpi: int = 200          # bump dpi for video quality
     background_color: str = "white"
+    world_color: str = "lightgray"
     boundary_color: str = "black"
     show_axes: bool = False
     equal_aspect: bool = True
     frame_on: bool = False  # usually off for “satisfying” clips
+    padding: float = 0.1   # fraction of figure size to pad around content
+    
 
 
 class MatplotlibRenderer:
-    def __init__(self, config: RendererConfig | None = None):
+    def __init__(self, config: RendererConfig | None = None, body_static: dict[int, BodyStaticSnapshot] | None = None):
         self.config = config or RendererConfig()
-
+        self.body_themes = {}#{'BodyTheme': BodyTheme}
+        if body_static is not None:
+            for _, b in body_static.items():
+                if b.theme is not None and b.theme not in self.body_themes.keys():
+                    Mod = importlib.import_module('satisfying_sims.themes', package=__package__)
+                    self.body_themes[b.theme] = getattr(Mod, b.theme)()
+            for theme in self.body_themes.values():
+                theme.prepare_for_recording(body_static=body_static)
+        #print('body themes: ', list(self.body_themes.keys()))
+        
     def render_snapshot(
         self,
         snapshot: "FrameSnapshot",
@@ -47,15 +61,21 @@ class MatplotlibRenderer:
             self._draw_boundary(world_for_boundary, ax)
 
         for body_id, state in snapshot.bodies.items():
-            self._draw_body(
+            theme = self.body_themes[body_static[body_id].theme]
+            theme.draw_body(
+                ax=ax,
+                body_id=body_id,
                 state=state,
-                body_static=body_static[body_id] or None,
-                ax=ax
+                static=body_static[body_id] or None,
             )
     # --- helpers ---
 
-    def _setup_axes(self, ax: Axes) -> None:
+    def _setup_axes(self, ax: Axes, pad: float = 0.05) -> None:
+        # Fill entire figure
+        ax.set_position([pad, pad, 1-2*pad, 1-2*pad])
         ax.set_facecolor(self.config.background_color)
+        fig = ax.get_figure()
+        fig.patch.set_facecolor(self.config.background_color)
         if self.config.equal_aspect:
             ax.set_aspect("equal", adjustable="box")
         if not self.config.show_axes:
@@ -69,8 +89,8 @@ class MatplotlibRenderer:
             return
         plot_fn = getattr(boundary, "plot", None)
         if callable(plot_fn):
-            pad = 0.01 * max(boundary.width, boundary.height)
-            plot_fn(ax=ax, delta=pad, edgecolor=self.config.boundary_color)
+            pad = self.config.padding * max(boundary.width, boundary.height)
+            plot_fn(ax=ax, delta=pad, facecolor=self.config.world_color, edgecolor=self.config.boundary_color)
 
     def _draw_body(
         self,

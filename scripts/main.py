@@ -10,6 +10,7 @@ from satisfying_sims.render.video import render_video, render_video_with_audio
 from satisfying_sims.utils.random import seed_all
 from satisfying_sims.presets.basic import make_world
 from satisfying_sims.utils.cli import build_parser
+from satisfying_sims.render.renderer import MatplotlibRenderer, RendererConfig
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -44,7 +45,8 @@ def main():
     video_path = exp_dir / "video.mp4"
     recording_path = exp_dir / "recording.pkl.xz"
     recording.save(recording_path)
-
+    render_config = RendererConfig(background_color=args.background_color, world_color=args.world_color)
+    renderer = MatplotlibRenderer(render_config, body_static=recording.body_static)
     # 4. Render video, optionally with audio
     if args.audio_samples_dir is None:
         # Silent video only
@@ -54,6 +56,7 @@ def main():
             fps=args.frame_rate,
             world_for_boundary=world,
             bitrate=args.bitrate,
+            renderer=renderer,
         )
     else:
         # Video + audio
@@ -67,6 +70,7 @@ def main():
             world_for_boundary=world,
             bitrate=args.bitrate,
             sample_names=args.sample_map,
+            renderer=renderer,
         )
 
 

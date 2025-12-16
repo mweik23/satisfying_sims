@@ -60,7 +60,7 @@ def render_video(
         - ffmpeg installed and discoverable by Matplotlib.
     """
     if renderer is None:
-        renderer = MatplotlibRenderer(RendererConfig())
+        renderer = MatplotlibRenderer(RendererConfig(), body_static=recording.body_static)
 
     output_path = Path(output_path)
     config = renderer.config
@@ -97,6 +97,7 @@ def render_video_with_audio(
     world_for_boundary: World | None = None,
     bitrate: int = 8000,
     sample_names: dict[str, str] | None = None,
+    renderer: MatplotlibRenderer | None = None,
 ) -> Path:
     """
     Convenience wrapper:
@@ -117,6 +118,7 @@ def render_video_with_audio(
         fps=fps,
         world_for_boundary=world_for_boundary,
         bitrate=bitrate,
+        renderer=renderer
     )
 
     # 2) Build soundtrack

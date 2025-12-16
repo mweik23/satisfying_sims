@@ -48,14 +48,32 @@ def build_parser():
         help="Extra tail seconds after recording end in soundtrack.",
     )
     parser.add_argument(
-    "--sample-map",
-    type=json.loads,
-    default=None,
-    help=(
-        "JSON dict mapping event types to sample names, "
-        'e.g. \'{"CollisionEvent": "metal_clang", "BoundaryCollisionEvent": "wood_thud"}\''
-    ),
-)
+        "--sample-map",
+        type=json.loads,
+        default=None,
+        help=(
+            "JSON dict mapping event types to sample names, "
+            'e.g. \'{"CollisionEvent": "metal_clang", "BoundaryCollisionEvent": "wood_thud"}\''
+        ),
+    )
+    parser.add_argument(
+        "--body_theme",
+        type=str,
+        default=None,
+        help="theme for bodies in the simulation"
+    )
+    parser.add_argument(
+        "--background_color",
+        type=str,
+        default="white",
+        help="background color for the rendered video"
+    )
+    parser.add_argument(
+        "--world_color",
+        type=str,
+        default="lightgray",
+        help="background color for the rendered video"
+    )
     return parser
 
 '''
@@ -64,5 +82,6 @@ usage: python render_video.py --exp_name my_experiment --seed 42 --frame_rate 60
         --boundary '{"type": "BoxBoundary", "params": {"width": 100.0, "height": 100.0}}' \
             --n_bodies 20 --body_color blue --sigma_v 10.0 --radius 1.0 --bitrate 8000 \
                 --audio-samples-dir assets/audio --audio-sr 44100 --audio-tail 0.5 \
-                    --sample-map '{"CollisionEvent": "ice_crack", "HitWallEvent": "bloop"}'
+                    --sample-map '{"CollisionEvent": "ice_crack", "HitWallEvent": "bloop"}' \
+                        --body_theme "IceCracksTheme"
 '''

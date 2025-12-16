@@ -81,6 +81,7 @@ class SpawnOnCollision(Rule):
                 radius=child_radius,
                 mass=props["mass"],
                 color=props["color"],
+                theme=props['theme']
             ) if props["kind"] == "circle" else None
             if child is not None:
                 try:
@@ -108,6 +109,7 @@ class SpawnOnCollision(Rule):
             "radius": a.collider.radius,
             "mass": a.mass,
             "color": a.color,
+            "theme": a.theme
         }
 
     def _choose_pos_velocity(

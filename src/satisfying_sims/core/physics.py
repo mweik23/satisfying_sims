@@ -88,6 +88,10 @@ def _circle_circle_collision(world: World, a: Body, b: Body, t: float) -> Collis
 
     contact_point = a.pos + n * a.collider.radius
 
+    #increment collisions
+    a.collision_count += 1
+    b.collision_count += 1
+    
     return CollisionEvent(
         t=t,
         a_id=a.id,

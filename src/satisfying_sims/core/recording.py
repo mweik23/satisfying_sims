@@ -37,6 +37,7 @@ class BodyStaticSnapshot:
     mass: float
     color: Tuple[float, float, float]  # normalized 0–1 for matplotlib
     collider: "ColliderSnapshot"       # your existing ColliderSnapshot
+    theme: str
     # add any other truly-static fields here (e.g., radius for circles)
     
 @dataclass
@@ -44,6 +45,7 @@ class BodyStateSnapshot:
     """Per-frame dynamic state of a body."""
     pos: Tuple[float, float]
     vel: Tuple[float, float]
+    collision_count: int
     # If you have other evolving fields (e.g. life, state), add them here.
 
 
@@ -114,6 +116,7 @@ def make_body_static_snapshot(body: "Body") -> BodyStaticSnapshot:
         id=body.id,
         mass=float(body.mass),
         color=tuple(c / 255 for c in body.color) if getattr(body, "color", None) is not None else None,
+        theme=body.theme,
         collider=body.collider.to_snapshot(),  # your existing method
     )
 
@@ -124,8 +127,8 @@ def make_body_state_snapshot(body: "Body") -> BodyStateSnapshot:
     return BodyStateSnapshot(
         pos=(float(pos[0]), float(pos[1])),
         vel=(float(vel[0]), float(vel[1])),
+        collision_count=body.collision_count
     )
-
 
 def snapshot_world(world, t: float, 
     events: list[Event],
