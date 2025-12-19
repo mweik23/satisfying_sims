@@ -16,7 +16,8 @@ class SimConfig:
     drag: float = 0.0
     restitution: float = 1.0
     n_bodies: int = 10
-    body_color: str = "blue"
+    body_color: str | None = "blue"
+    body_cmap: str | None = None
     sigma_v: float = 5.0
     radius: float = 1.0
     body_theme: str | None = None

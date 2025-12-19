@@ -7,7 +7,8 @@ from typing import Callable, Iterable, List
 
 import numpy as np
 
-from satisfying_sims.core.recording import EventSnapshot
+from satisfying_sims.utils.random import rng
+from satisfying_sims.core.recording import EventSnapshot, EventContext
 from .engine import SoundTrigger
 
 # Functions map EventSnapshot -> float
@@ -36,11 +37,17 @@ class EventSoundMapper:
     Rules are keyed by EventSnapshot.type, e.g. "CollisionEvent".
     """
 
-    def __init__(self, rules: dict[str, EventSoundRule]):
+    def __init__(self, rules: dict[str, EventSoundRule], keep_prob: Callable | None = None):
         self.rules = rules
+        self.keep_prob = keep_prob or (lambda snap, rule_events: 1.0)
 
-    def snapshot_to_trigger(self, snap: EventSnapshot) -> SoundTrigger | None:
-        rule = self.rules.get(snap.type)
+    def snapshot_to_trigger(self, snap: EventContext) -> SoundTrigger | None:
+        u = rng('audio').random()
+        p_accept = self.keep_prob(snap, list(self.rules.keys()))
+        if u<=p_accept:
+            rule = self.rules.get(snap.ev.type)
+        else:
+            rule = None
         if rule is None or not rule.enabled:
             return None
 
@@ -48,14 +55,14 @@ class EventSoundMapper:
         pitch_ratio = float(rule.pitch_fn(snap))
 
         return SoundTrigger(
-            t=float(snap.t),
+            t=float(snap.ev.t),
             sample_name=rule.sample_name,
             gain=gain,
             pitch_ratio=pitch_ratio,
         )
 
     def triggers_from_snapshots(
-        self, snapshots: Iterable[EventSnapshot]
+        self, snapshots: Iterable[EventContext]
     ) -> List[SoundTrigger]:
         out: List[SoundTrigger] = []
         for snap in snapshots:
@@ -75,7 +82,7 @@ def gain_from_impulse(
     """
     Example: gain ∝ impulse (from payload["impulse"]), clipped at max_gain.
     """
-    impulse = float(snap.payload.get("impulse", 1.0))
+    impulse = float(snap.ev.payload.get("impulse", 1.0))
     return min(max_gain, scale * abs(impulse))
 
 
@@ -98,6 +105,6 @@ def pitch_from_relative_speed(
 
     Maps relative_speed via tanh to [base - spread, base + spread].
     """
-    v = float(snap.payload.get("relative_speed", 1.0))
+    v = float(snap.ev.payload.get("relative_speed", 1.0))
     offset = spread * np.tanh(v_scale * v)
     return base + offset

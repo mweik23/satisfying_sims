@@ -8,7 +8,7 @@ import subprocess
 
 import numpy as np
 
-from satisfying_sims.core.recording import SimulationRecording, EventSnapshot
+from satisfying_sims.core.recording import SimulationRecording, EventContext
 from satisfying_sims.audio.io import load_sample_bank
 from satisfying_sims.audio.engine import AudioEngine
 from satisfying_sims.audio.mapping import (
@@ -18,23 +18,23 @@ from satisfying_sims.audio.mapping import (
     gain_constant,
     pitch_from_relative_speed,
 )
+from satisfying_sims.audio.event_rejection import RejectConfig, make_keep_prob
 
 # ---------- Core: snapshots -> audio buffer ---------- #
 
 def build_soundtrack_from_snapshots(
-    snapshots: Iterable[EventSnapshot],
+    snapshots: Iterable[EventContext],
     mapper: EventSoundMapper,
     engine: AudioEngine,
     base_duration: Optional[float] = None,
     tail: float = 0.3,
     normalize: bool = True,
 ) -> np.ndarray:
-    snapshots = list(snapshots)
     triggers = mapper.triggers_from_snapshots(snapshots)
 
     if base_duration is None:
         if snapshots:
-            base_duration = max(float(s.t) for s in snapshots)
+            base_duration = max(float(s.ev.t) for s in snapshots)
         else:
             base_duration = 0.0
 
@@ -105,6 +105,7 @@ def build_and_save_soundtrack(
     tail: float = 0.3,
     rules: Optional[dict[str, EventSoundRule]] = None,
     sample_names: dict[str, str] | None = None,
+    reject_cfg: Optional[RejectConfig] = None,
 ) -> Path:
     """
     High-level helper used by both CLI and video pipeline.
@@ -121,10 +122,10 @@ def build_and_save_soundtrack(
     samples_dir = Path(samples_dir)
     wav_path = Path(wav_path)
 
-    events = list(recording.iter_events())
+    event_context = recording.iter_event_context()
     t_end = recording.t_end
-    if t_end is None and events:
-        t_end = max(float(s.t) for s in events)
+    if t_end is None and event_context:
+        t_end = max(float(s.ev.t) for s in event_context)
     elif t_end is None:
         t_end = 0.0
 
@@ -135,11 +136,12 @@ def build_and_save_soundtrack(
     # 2) Rules + mapper
     if rules is None:
         rules = make_default_event_sound_rules(sample_names=sample_names)
-    mapper = EventSoundMapper(rules)
+    keep_prob = make_keep_prob(reject_cfg) if reject_cfg is not None else None
+    mapper = EventSoundMapper(rules, keep_prob=keep_prob) #TODO: define keep_prob if needed
 
     # 3) Build audio & write wav
     audio = build_soundtrack_from_snapshots(
-        snapshots=events,
+        snapshots=event_context,
         mapper=mapper,
         engine=engine,
         base_duration=t_end,

@@ -16,6 +16,8 @@ from .boundary import Boundary
 from .physics import step_physics
 from .events import BaseEvent
 from .recording import snapshot_world, BodyStaticSnapshot
+from satisfying_sims.visual.color_sampler import ColorSampler
+from satisfying_sims.audio.estimate_rate import EventRateEstimator
 
 if TYPE_CHECKING:
     from .rules import Rule
@@ -27,9 +29,14 @@ class World:
     drag: float
     restitution: float
     bodies: dict[int, Body] = field(default_factory=dict)
+    color_sampler: ColorSampler | None = None
     time: float = 0.0
     _next_id: int = 0
     rules: List[Rule] = field(default_factory=list)
+    
+    @property
+    def n_bodies(self) -> int:
+        return len(self.bodies)
 
     def new_id(self) -> int:
         nid = self._next_id
@@ -130,6 +137,7 @@ def run_simulation(
     """
     recording = SimulationRecording()
     body_static: dict[int, BodyStaticSnapshot] = {}
+    rate_est = EventRateEstimator()
     for step in range(n_steps):
         all_events = world.step(dt)  # or whatever your integrator API is
         frame_events = all_events if record_events else []
@@ -137,9 +145,14 @@ def run_simulation(
                                   t=world.time, 
                                   events=frame_events,
                                   body_static_registry=body_static)
+        for e in snapshot.events:
+            rate_est.update(e.type, snapshot.t)
+        lam = rate_est.rates(snapshot.t)
+        snapshot.rates = lam
         recording.add_frame(snapshot)
         recording.body_static.update(body_static)
         if (step + 1) % log_interval == 0:
             print(f"Simulated {world.time:.3f} seconds / {n_steps*dt:.3f} seconds...")
+            print(f"Number of bodies: {len(world.bodies)}")
 
     return recording

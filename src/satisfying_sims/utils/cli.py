@@ -21,7 +21,7 @@ def build_parser():
                         help='type of boundary for the simulation (default: box)')
     parser.add_argument('--n_bodies', type=int, default=10, metavar='N',
                         help='number of bodies in the simulation (default: 10)')
-    parser.add_argument('--body_color', type=str, default='blue', metavar='N',
+    parser.add_argument('--body_color', type=str, default=None, metavar='N',
                         help='color of the bodies in the simulation (default: blue)')
     parser.add_argument('--sigma_v', type=float, default=5.0, metavar='N',
                         help='standard deviation of the initial velocity (default: 5.0)')
@@ -29,6 +29,8 @@ def build_parser():
                         help='radius of the bodies in the simulation (default: 1.0)')
     parser.add_argument('--bitrate', type=int, default=8000, metavar='N',
                         help='bitrate for the rendered video in kbps (default: 8000)')
+    parser.add_argument('--crf', type=str, default='23', metavar='N',
+                        help='constant rate factor for video quality (default: 23)')
     parser.add_argument(
     "--audio-samples-dir",
     type=str,
@@ -48,7 +50,7 @@ def build_parser():
         help="Extra tail seconds after recording end in soundtrack.",
     )
     parser.add_argument(
-        "--sample-map",
+        "--sample_map",
         type=json.loads,
         default=None,
         help=(
@@ -73,6 +75,70 @@ def build_parser():
         type=str,
         default="lightgray",
         help="background color for the rendered video"
+    )
+    parser.add_argument(
+        "--width_px",
+        type=int,
+        default=None,
+        help="width in pixels for the rendered video"
+    )
+    parser.add_argument(
+        "--height_px",
+        type=int,
+        default=None,
+        help="height in pixels for the rendered video"
+    )
+    parser.add_argument(
+        "--padding",
+        type=float,
+        default=0.05,
+        help="padding fraction for the rendered video"
+    )
+    parser.add_argument(
+        "--n_bodies_thresh_frame",
+        type=int,
+        default=5,
+        help="find a frame with at least this many bodies for exporting special frames"
+    )
+    parser.add_argument(
+        "--export_design_frames",
+        action='store_true',
+        help="whether to export special design frames"
+    )
+    parser.add_argument(
+        "--boundary_color",
+        type=str,
+        default="turquoise",
+        help="color of the boundary in the simulation (default: turquoise)"
+    )
+    parser.add_argument(
+        "--body_cmap",
+        type=str,
+        default="viridis",
+        help="colormap for the bodies in the simulation (default: viridis)"
+    )
+    parser.add_argument(
+        "--show_debug",
+        action='store_true',
+        help="whether to show debug information overlay in the rendered video"
+    )
+    parser.add_argument(
+        "--lam0",
+        type=float,
+        default=None,
+        help="Base rejection rate for events (None to disable rejection).",
+    )
+    parser.add_argument(
+        "--lam_max",
+        type=float,
+        default=100.0,
+        help="Maximum rejection rate for events.",
+    )
+    parser.add_argument(
+        "--k",
+        type=float,
+        default=2.0,
+        help="Rejection rate growth parameter.",
     )
     return parser
 

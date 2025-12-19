@@ -54,8 +54,8 @@ class BodyTheme(Protocol):
         pos = np.asarray(state.pos, dtype=float)
 
         # --- static visual attributes ---
-        fc = body_static.color                   # already normalized (0–1) tuple
-        collider = body_static.collider          # ColliderSnapshot
+        fc = static.color                   # already normalized (0–1) tuple
+        collider = static.collider          # ColliderSnapshot
 
         if collider is None:
             # Fallback dot

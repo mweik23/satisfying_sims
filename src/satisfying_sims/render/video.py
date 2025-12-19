@@ -7,27 +7,30 @@ from typing import TYPE_CHECKING
 
 import shutil
 import subprocess
+from typing import Optional
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter
 
 from .renderer import MatplotlibRenderer, RendererConfig
 
+
 if TYPE_CHECKING:
     from satisfying_sims.core import SimulationRecording, World
+    from satisfying_sims.audio.event_rejection import RejectConfig
 
 from satisfying_sims.audio.build_soundtrack import (
     build_and_save_soundtrack,
     mux_audio_into_video_ffmpeg,
 )
-from satisfying_sims.core.recording import SimulationRecording
+from satisfying_sims.core.recording import SimulationRecording, FrameSnapshot
 from pathlib import Path
 
 if shutil.which("ffmpeg") is None:
     raise RuntimeError(
         "ffmpeg not found. Install with: conda install -c conda-forge ffmpeg"
     )
-def select_frames_for_fps(recording: SimulationRecording, fps: int) -> list[SimulationRecording]:
+def select_frames_for_fps(recording: SimulationRecording, fps: int) -> list[FrameSnapshot]:
     target_dt = 1.0 / fps
     frames = recording.frames
     if not frames:
@@ -51,7 +54,8 @@ def render_video(
     fps: int = 60,
     renderer: MatplotlibRenderer | None = None,
     world_for_boundary: World | None = None,
-    bitrate: int = 8000,
+    bitrate: int | None = None,
+    crf: str = "23",
 ) -> None:
     """
     Render a SimulationRecording to an MP4 using Matplotlib + ffmpeg.
@@ -63,27 +67,30 @@ def render_video(
         renderer = MatplotlibRenderer(RendererConfig(), body_static=recording.body_static)
 
     output_path = Path(output_path)
-    config = renderer.config
-
-    fig, ax = plt.subplots(figsize=config.figsize, dpi=config.dpi)
-
     writer = FFMpegWriter(
         fps=fps,
         metadata={"artist": "satisfying_sims"},
-        bitrate=bitrate, 
+        bitrate=bitrate,
+        extra_args=[
+            "-crf", crf,
+            "-preset", "slow",
+            "-pix_fmt", "yuv420p"
+        ],
     )
+    world_aspect = world_for_boundary.boundary.width / world_for_boundary.boundary.height if world_for_boundary is not None else 1.0
+    renderer._init_figure(world_aspect=world_aspect)
 
     frames_to_render = select_frames_for_fps(recording, fps)
-    with writer.saving(fig, str(output_path), config.dpi):
+    with writer.saving(renderer.fig, str(output_path), renderer.config.dpi):
         for frame in frames_to_render:
             renderer.render_snapshot(
                 frame,
                 body_static=recording.body_static,
-                ax=ax,
+                ax=renderer.ax,
                 world_for_boundary=world_for_boundary,
             )
             writer.grab_frame()
-    plt.close(fig)
+    plt.close(renderer.fig)
     return output_path
 
 def render_video_with_audio(
@@ -95,9 +102,11 @@ def render_video_with_audio(
     audio_sr: int = 44100,
     audio_tail: float = 0.3,
     world_for_boundary: World | None = None,
-    bitrate: int = 8000,
+    bitrate: int | None = None,
+    crf: str = "23",
     sample_names: dict[str, str] | None = None,
     renderer: MatplotlibRenderer | None = None,
+    reject_cfg: Optional[RejectConfig] = None,
 ) -> Path:
     """
     Convenience wrapper:
@@ -118,6 +127,7 @@ def render_video_with_audio(
         fps=fps,
         world_for_boundary=world_for_boundary,
         bitrate=bitrate,
+        crf=crf,
         renderer=renderer
     )
 
@@ -130,6 +140,7 @@ def render_video_with_audio(
         sr=audio_sr,
         tail=audio_tail,
         sample_names=sample_names,
+        reject_cfg=reject_cfg,
     )
 
     # 3) Mux

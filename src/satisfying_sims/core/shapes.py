@@ -7,9 +7,10 @@ from abc import ABC, abstractmethod
 import numpy as np
 from typing import Union
 Color = Tuple[int, int, int]
-from satisfying_sims.utils.plotting import color_to_uint8
+from satisfying_sims.utils.plotting import color_to_uint8, rgba_float_to_u8
 from .recording import ColliderSnapshot
 from satisfying_sims.themes.base import BodyTheme
+from satisfying_sims.visual.color_sampler import ColorSampler
 
 # --------- Colliders (geometry only) ---------
 
@@ -79,22 +80,31 @@ class Body:
 def create_circle_body(
     pos: np.ndarray,
     vel: np.ndarray,
-    color: Union[tuple, str] = (0, 0, 0),
+    color: tuple | None = None,
+    color_sampler: ColorSampler | None = None,
     theme: BodyTheme | None = None,
     radius: float = 1.0,
     mass: float = 1.0,
     life: float = float("inf"),
     state: dict | None = None,
 ) -> Body:
-        body = Body(
-            id=None,
-            pos=pos.astype(float),
-            vel=vel.astype(float),
-            mass=float(mass),
-            color=color_to_uint8(color) if type(color) is str else color,
-            theme = theme,
-            collider=CircleCollider(radius=float(radius)),
-            life=float(life),
-            state={} if state is None else dict(state),
-        )
-        return body
+    """Helper to create a circular Body with sensible defaults."""
+    if color is None:
+        if color_sampler is None:
+            color = "C0"  # fallback if you want
+        else:
+            color = color_sampler.sample()  # RGBA tuple
+            color = rgba_float_to_u8(color)
+            
+    body = Body(
+        id=None,
+        pos=pos.astype(float),
+        vel=vel.astype(float),
+        mass=float(mass),
+        color=color_to_uint8(color) if type(color) is str else color,
+        theme = theme,
+        collider=CircleCollider(radius=float(radius)),
+        life=float(life),
+        state={} if state is None else dict(state),
+    )
+    return body

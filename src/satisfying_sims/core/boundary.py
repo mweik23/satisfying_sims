@@ -116,8 +116,8 @@ class BoxBoundary(Boundary):
         self,
         radius: float = 0.0,
     ) -> np.ndarray:
-        x = rng().uniform(0.0 + radius, self.width - radius)
-        y = rng().uniform(0.0 + radius, self.height - radius)
+        x = rng("physics").uniform(0.0 + radius, self.width - radius)
+        y = rng("physics").uniform(0.0 + radius, self.height - radius)
         return np.array([x, y], dtype=float)
 
     def bounds(self) -> tuple[float, float, float, float]:

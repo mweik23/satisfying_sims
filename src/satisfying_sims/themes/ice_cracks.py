@@ -16,6 +16,7 @@ from satisfying_sims.core.recording import (
     BodyStateSnapshot,
 )
 from satisfying_sims.themes.base import BodyTheme
+from satisfying_sims.utils.random import rng_for_key
 
 @dataclass
 class IceCracksTheme(BodyTheme):
@@ -24,8 +25,13 @@ class IceCracksTheme(BodyTheme):
     the collision_count stored in BodyStateSnapshot.
     """
     max_cracks_per_body: int = 10
-    facecolor = (0.85, 0.93, 1.0, 0.6)
-    edgecolor = (0.9, 0.98, 1.0, 0.9)
+    facecolor: tuple[float, float, float, float] | None = (0.85, 0.93, 1.0, 0.6)
+    edgecolor: tuple[float, float, float, float] = (0.9, 0.98, 1.0, 1.0)
+    highlight_color: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 0.35)
+    shadow_color: tuple[float, float, float, float] = (0.2, 0.35, 0.6, 0.18)     # bluish shadow
+    rim_color: tuple[float, float, float, float] = (0.6, 0.85, 1.0, 0.22)        # subtle rim
+    line_color: tuple[float, float, float, float] = (0.75, 0.9, 1.0, 1.0)
+    three_d_effects: bool = False
 
     # runtime fields: filled in prepare_for_recording
     crack_geometries: Dict[int, List[np.ndarray]] | None = None
@@ -43,9 +49,9 @@ class IceCracksTheme(BodyTheme):
         
         body_ids = list(body_static.keys())
         for body_id in body_ids:
-            rng = np.random.default_rng(seed=body_id)
+            crack_rng = rng_for_key("cracks", body_id)
             self.crack_geometries[body_id] = self._generate_cracks_for_body(
-                rng=rng,
+                rng=crack_rng,
                 n_cracks=self.max_cracks_per_body,
             )
 
@@ -62,17 +68,65 @@ class IceCracksTheme(BodyTheme):
         kind = collider.kind
         attrs = collider.attrs or {}
 
-        
         if kind=="CircleCollider":
             radius = attrs.get('radius', 0.02)
+
+            # --- Base sphere ---
             circle = Circle(
                 (x, y),
                 radius,
-                linewidth=radius/3,
+                linewidth=radius / 4,
                 edgecolor=self.edgecolor,
-                facecolor=self.facecolor,
+                facecolor=self.facecolor if self.facecolor is not None else static.color,
+                zorder=2,
             )
             ax.add_patch(circle)
+            if self.three_d_effects:
+                # --- Rim vignette (a slightly smaller ring-ish feel) ---
+                rim = Circle(
+                    (x, y),
+                    radius*0.98,
+                    linewidth=radius / 2.8,
+                    edgecolor=self.rim_color,
+                    facecolor="none",
+                    zorder=3,
+                )
+                ax.add_patch(rim)
+
+                # --- Soft shadow (bottom-right) ---
+                sx, sy = x + 0.18 * radius, y + 0.18 * radius
+                shadow = Circle(
+                    (sx, sy),
+                    radius * 0.92,
+                    linewidth=0.0,
+                    edgecolor="none",
+                    facecolor=self.shadow_color,
+                    zorder=3,
+                )
+                ax.add_patch(shadow)
+
+                # --- Specular highlight (top-left) ---
+                hx, hy = x - 0.28 * radius, y - 0.28 * radius
+                highlight = Circle(
+                    (hx, hy),
+                    radius * 0.38,
+                    linewidth=0.0,
+                    edgecolor="none",
+                    facecolor=self.highlight_color,
+                    zorder=4,
+                )
+                ax.add_patch(highlight)
+
+                # --- Tiny bright core to make the highlight pop ---
+                highlight2 = Circle(
+                    (hx - 0.04 * radius, hy - 0.04 * radius),
+                    radius * 0.18,
+                    linewidth=0.0,
+                    edgecolor="none",
+                    facecolor=(1.0, 1.0, 1.0, 0.18),
+                    zorder=5,
+                )
+                ax.add_patch(highlight2)
 
         # 2) cracks based on total collision_count
         if self.crack_geometries is None:
@@ -87,7 +141,7 @@ class IceCracksTheme(BodyTheme):
             return
 
         n_to_show = min(len(crack_polylines), n_collisions+3)
-        lw = (radius/3) * (0.5 + 0.08 * (n_to_show-1))
+        lw = (radius/3) * (1.3 + 0.05 * (n_to_show-1))
 
         for i in range(n_to_show):
             pts = crack_polylines[i]
@@ -103,10 +157,15 @@ class IceCracksTheme(BodyTheme):
                 scaled[:, 0],
                 scaled[:, 1],
                 linewidth=lw,
-                color=self.edgecolor,
-                #solid_capstyle="",
+                color=self.line_color,  # softer than edgecolor
+                solid_capstyle="butt",
+                solid_joinstyle="round",
+                zorder=3.5,
             )
+            line.set_clip_path(circle)          # <-- hard guarantee: never draws outside
+            line.set_clip_on(True)
             ax.add_line(line)
+
 
     def _generate_cracks_for_body(
         self,
@@ -140,6 +199,5 @@ class IceCracksTheme(BodyTheme):
                     angle = np.arctan2(points[j,1], points[j,0])
                     points[j] = np.array([np.cos(angle), np.sin(angle)])
             cracks.append(points)
-
 
         return cracks

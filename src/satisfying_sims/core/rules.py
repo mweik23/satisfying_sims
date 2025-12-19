@@ -19,6 +19,8 @@ from .events import (
 )
 from .shapes import Body, create_circle_body
 from .physics import get_penetration
+from satisfying_sims.utils.physics_utils import velocity_cm
+from satisfying_sims.visual.color_sampler import ColorSampler
 
 class Rule(ABC):
     """Base class for rules that modify the world based on events."""
@@ -80,7 +82,8 @@ class SpawnOnCollision(Rule):
                 vel=vel,
                 radius=child_radius,
                 mass=props["mass"],
-                color=props["color"],
+                color=props["color"] if world.color_sampler is None else None,
+                color_sampler=world.color_sampler,
                 theme=props['theme']
             ) if props["kind"] == "circle" else None
             if child is not None:
@@ -119,6 +122,7 @@ class SpawnOnCollision(Rule):
         b: Body,
         child_radius: float, # TODO: should be bounding radius of child collider when I expand beyond circles
         e: CollisionEvent,
+        use_vcm: bool = False,
     ):
         """
         Place the child on a line perpendicular to the line of centers (B->A),
@@ -159,7 +163,7 @@ class SpawnOnCollision(Rule):
 
         # Randomly choose side (+perp or -perp)
         options = np.array([-1.0, 1.0])
-        sign = rng().choice(options, replace=False)
+        sign = rng("physics").choice(options, replace=False)
         perp *= sign
         child_pos = mid + L * perp
         if not self._valid_child_position(world, child_pos, child_radius): #TODO: make bounding_radius when expanding beyond circles
@@ -168,19 +172,13 @@ class SpawnOnCollision(Rule):
             child_pos = mid + L * perp
             if not self._valid_child_position(world, child_pos, child_radius):
                 return None, None
-        # Center-of-mass velocity
-        vel_a = np.asarray(a.vel, dtype=float)
-        vel_b = np.asarray(b.vel, dtype=float)
-        m_a = a.mass
-        m_b = b.mass
-        m_tot = m_a + m_b
-
-        if m_tot > 0.0:
-            v_cm = (m_a * vel_a + m_b * vel_b) / m_tot
+        if use_vcm:
+            v_cm = velocity_cm(a, b)
+            child_vel = v_cm + self.vel_kick * perp
         else:
-            v_cm = 0.5 * (vel_a + vel_b)
-
-        child_vel = v_cm + self.vel_kick * perp
+            va_perp = np.dot(a.vel, perp)
+            vb_perp = np.dot(b.vel, perp)
+            child_vel = (max(max(np.abs(va_perp), np.abs(vb_perp)), 0.0) + self.vel_kick) * perp
         return child_pos, child_vel
 
     def _valid_child_position(self, world: World, child_pos: np.ndarray, child_radius: float) -> bool:

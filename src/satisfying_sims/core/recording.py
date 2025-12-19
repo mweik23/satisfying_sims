@@ -58,11 +58,18 @@ class EventSnapshot:
     payload: dict[str, Any] = field(default_factory=dict)
     # payload can carry extra info like impulse, wall normal, etc.
 
+@dataclass(frozen=True)
+class EventContext:
+    ev: EventSnapshot
+    rates: dict[str, float]   # or Mapping[str, float]
+    frame_index: int | None = None
+
 @dataclass
 class FrameSnapshot:
     t: float
     bodies: dict[int, BodyStateSnapshot]
     events: list[EventSnapshot] = field(default_factory=list)
+    rates: dict[str, float] | None = None
 
 
 @dataclass
@@ -96,6 +103,11 @@ class SimulationRecording:
             for ev in frame.events:
                 yield ev
     
+    def iter_event_context(self):
+        for i, frame in enumerate(self.frames):
+            for ev in frame.events:
+                yield EventContext(ev=ev, rates=frame.rates, frame_index=i)
+        
     def save(self, path: str | Path) -> None:
         path = Path(path)
         with lzma.open(path, "wb") as f:
@@ -161,4 +173,4 @@ def snapshot_world(world, t: float,
                 payload=e.to_payload_dict()
             )
         )
-    return FrameSnapshot(t=t, bodies=bodies_state, events=event_snaps)
+    return FrameSnapshot(t=t, bodies=bodies_state, events=event_snaps, rates={})
