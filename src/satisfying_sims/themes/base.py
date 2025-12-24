@@ -12,6 +12,8 @@ from satisfying_sims.core.recording import (
     BodyStaticSnapshot,
     BodyStateSnapshot,
 )
+class BodyThemeConfig:
+    pass
 
 
 class BodyTheme(Protocol):

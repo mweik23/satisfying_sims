@@ -69,9 +69,10 @@ class BoxBoundary(Boundary):
         r = body.collider.bounding_radius()
         pos = body.pos
         vel = body.vel
-        
+        hit_wall = False
         # Left wall
         if pos[0] - r < 0.0:
+            hit_wall
             old_vx = vel[0]
             pos[0] = r
             vel[0] = -restitution * vel[0]
@@ -80,6 +81,7 @@ class BoxBoundary(Boundary):
 
         # Right wall
         if pos[0] + r > self.width:
+            hit_wall = True
             old_vx = vel[0]
             pos[0] = self.width - r
             vel[0] = -restitution * vel[0]
@@ -88,6 +90,7 @@ class BoxBoundary(Boundary):
 
         # Top wall
         if pos[1] - r < 0.0:
+            hit_wall = True
             old_vy = vel[1]
             pos[1] = r
             vel[1] = -restitution * vel[1]
@@ -96,11 +99,15 @@ class BoxBoundary(Boundary):
 
         # Bottom wall
         if pos[1] + r > self.height:
+            hit_wall = True
             old_vy = vel[1]
             pos[1] = self.height - r
             vel[1] = -restitution * vel[1]
             impulse = body.mass * abs(old_vy - vel[1])
             events.append(HitWallEvent(t=t, body_id=body.id, norm_vec=np.array([0.0, -1.0]), impulse=impulse))
+            
+        if hit_wall:
+            body.angular_velocity += rng('physics').uniform(-2*np.pi, 2*np.pi)
         return events
     
     def contains(self, pos: np.ndarray, radius: float = 0.0) -> bool:

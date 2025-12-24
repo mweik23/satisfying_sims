@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter
 
 from .renderer import MatplotlibRenderer, RendererConfig
+from satisfying_sims.utils.video_utils import PREVIEW_FFMPEG_ARGS, FINAL_FFMPEG_ARGS
 
 
 if TYPE_CHECKING:
@@ -30,19 +31,47 @@ if shutil.which("ffmpeg") is None:
     raise RuntimeError(
         "ffmpeg not found. Install with: conda install -c conda-forge ffmpeg"
     )
+from copy import copy
+
 def select_frames_for_fps(recording: SimulationRecording, fps: int) -> list[FrameSnapshot]:
     target_dt = 1.0 / fps
     frames = recording.frames
     if not frames:
         return []
 
-    selected = []
+    # 1) Select frames (same as before)
+    selected: list[FrameSnapshot] = []
     next_t = frames[0].t
-
     for f in frames:
         if f.t + 1e-9 >= next_t:
-            selected.append(f)
+            # shallow copy so we can rewrite events without mutating original recording
+            f2 = copy(f)
+            f2.events = []  # type: ignore[attr-defined]
+            selected.append(f2)
             next_t += target_dt
+
+    if not selected:
+        return []
+
+    # 2) Gather all events with their times from the *full-rate* frames
+    #    (adjust this depending on where events live in your data model)
+    all_events = []
+    for f in frames:
+        for e in getattr(f, "events", []):
+            all_events.append((f.t, e))
+
+    # 3) Assign each event to the nearest selected frame
+    j = 0  # index into selected
+    for t_e, e in all_events:
+        # advance j while the next selected frame is closer
+        while j + 1 < len(selected):
+            t0 = selected[j].t
+            t1 = selected[j + 1].t
+            if abs(t1 - t_e) <= abs(t0 - t_e):
+                j += 1
+            else:
+                break
+        selected[j].events.append(e)  # type: ignore[attr-defined]
 
     return selected
 
@@ -55,7 +84,8 @@ def render_video(
     renderer: MatplotlibRenderer | None = None,
     world_for_boundary: World | None = None,
     bitrate: int | None = None,
-    crf: str = "23",
+    preview: bool = False,
+    log_interval: int = 1 #seconds
 ) -> None:
     """
     Render a SimulationRecording to an MP4 using Matplotlib + ffmpeg.
@@ -71,24 +101,22 @@ def render_video(
         fps=fps,
         metadata={"artist": "satisfying_sims"},
         bitrate=bitrate,
-        extra_args=[
-            "-crf", crf,
-            "-preset", "slow",
-            "-pix_fmt", "yuv420p"
-        ],
+        extra_args=PREVIEW_FFMPEG_ARGS if preview else FINAL_FFMPEG_ARGS,
     )
-    world_aspect = world_for_boundary.boundary.width / world_for_boundary.boundary.height if world_for_boundary is not None else 1.0
-    renderer._init_figure(world_aspect=world_aspect)
+
+    renderer._init_figure(world=world_for_boundary)
 
     frames_to_render = select_frames_for_fps(recording, fps)
     with writer.saving(renderer.fig, str(output_path), renderer.config.dpi):
-        for frame in frames_to_render:
+        for idx, frame in enumerate(frames_to_render):
             renderer.render_snapshot(
                 frame,
                 body_static=recording.body_static,
                 ax=renderer.ax,
-                world_for_boundary=world_for_boundary,
+                frame_idx = idx
             )
+            if (idx+1) % (fps*log_interval) == 0:
+                print(f"Rendered {(idx+1)/fps:.1f} seconds of video...")
             writer.grab_frame()
     plt.close(renderer.fig)
     return output_path
@@ -103,7 +131,7 @@ def render_video_with_audio(
     audio_tail: float = 0.3,
     world_for_boundary: World | None = None,
     bitrate: int | None = None,
-    crf: str = "23",
+    preview: bool = False,
     sample_names: dict[str, str] | None = None,
     renderer: MatplotlibRenderer | None = None,
     reject_cfg: Optional[RejectConfig] = None,
@@ -127,7 +155,7 @@ def render_video_with_audio(
         fps=fps,
         world_for_boundary=world_for_boundary,
         bitrate=bitrate,
-        crf=crf,
+        preview=preview,
         renderer=renderer
     )
 

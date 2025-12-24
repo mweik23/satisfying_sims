@@ -32,10 +32,16 @@ def build_parser():
     parser.add_argument('--crf', type=str, default='23', metavar='N',
                         help='constant rate factor for video quality (default: 23)')
     parser.add_argument(
-    "--audio-samples-dir",
-    type=str,
-    default=None,
-    help="Directory of WAV samples for building soundtrack. If omitted, no audio is added.",
+        "--gravity",
+        type=float,
+        default=0.0,
+        help="Gravity strength in the downward (negative y) direction.",
+    )
+    parser.add_argument(
+        "--audio-samples-dir",
+        type=str,
+        default=None,
+        help="Directory of WAV samples for building soundtrack. If omitted, no audio is added.",
     )
     parser.add_argument(
         "--audio-sr",
@@ -65,15 +71,39 @@ def build_parser():
         help="theme for bodies in the simulation"
     )
     parser.add_argument(
+        "--sprite_dir",
+        type=str,
+        default='assets/sprites',
+        help="directory containing sprite images for SpriteTheme"
+    )
+    parser.add_argument(
+        "--sprite_type",
+        type=str,
+        default='ornament',
+        help="type of sprite theme to use (e.g., ornament, ice_cracks)"
+    )
+    parser.add_argument(
         "--background_color",
         type=str,
         default="white",
         help="background color for the rendered video"
     )
     parser.add_argument(
+        "--background_path",
+        type=str,
+        default="assets/backgrounds",
+        help="path to a background image PNG for the rendered video"
+    )
+    parser.add_argument(
+        "--background_png_dir",
+        type=str,
+        default=None,
+        help="directory with PNG image to use as the background for the rendered video"
+    )
+    parser.add_argument(
         "--world_color",
         type=str,
-        default="lightgray",
+        default=None,
         help="background color for the rendered video"
     )
     parser.add_argument(
@@ -108,13 +138,13 @@ def build_parser():
     parser.add_argument(
         "--boundary_color",
         type=str,
-        default="turquoise",
+        default=None,
         help="color of the boundary in the simulation (default: turquoise)"
     )
     parser.add_argument(
         "--body_cmap",
         type=str,
-        default="viridis",
+        default=None,
         help="colormap for the bodies in the simulation (default: viridis)"
     )
     parser.add_argument(
@@ -139,6 +169,39 @@ def build_parser():
         type=float,
         default=2.0,
         help="Rejection rate growth parameter.",
+    )
+    parser.add_argument(
+        "--caption_text",
+        type=str,
+        default="",
+        help="Caption text to overlay on the video.",
+    )
+    parser.add_argument(
+        "--hud_text",
+        type=str,
+        default="",
+        help="HUD text to overlay on the video.",
+    )
+    parser.add_argument(
+        "--preview",
+        action='store_true',
+        help="whether to use preview settings for faster rendering"
+    )
+    parser.add_argument(
+        "--collision_effects",
+        type=json.loads,
+        default=None,
+        help=(
+            "JSON dict mapping event types to collision effect configs, "
+            'e.g. \'{"CollisionEvent": {"asset": "fx/firework.mp4", "size_world": 0.35, "cmap": "viridis"}, '
+            '"HitWallEvent": {"asset": "fx/spark.mp4", "size_scale_with_radius": 3.0}}\''
+        ),
+    )
+    parser.add_argument(
+        "--collision-effects_dir",
+        type=str,
+        default="assets/effects",
+        help="directory containing collision effect assets"
     )
     return parser
 

@@ -60,7 +60,7 @@ def main() -> None:
     parser.add_argument(
         "--video_out",
         type=str,
-        default="video.mp4",
+        default="video_new.mp4",
         help="Output video path if --video is given.",
     )
     parser.add_argument(

@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from PIL import Image
 from typing import TYPE_CHECKING
-
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 import importlib
 from satisfying_sims.themes import BodyTheme
 from satisfying_sims.utils.render_utils import fig_inches_from_pixels
-
+from satisfying_sims.themes import THEME_REGISTRY
+from satisfying_sims.utils.render_utils import compute_axes_rect
 if TYPE_CHECKING:
     from satisfying_sims.core.recording import FrameSnapshot, BodyStaticSnapshot, BodyStateSnapshot
     from satisfying_sims.core.world import World
+    from satisfying_sims.themes.base import BodyThemeConfig
+    from satisfying_sims.utils.render_utils import BoxGeometry
+    from .collision_effects import CollisionEffectRouter
 
 
 @dataclass
@@ -23,60 +27,97 @@ class RendererConfig:
     dpi: int = 200          # bump dpi for video quality
     width_px: int | None = None
     height_px: int | None = None
-    background_color: str = "white"
-    world_color: str = "lightgray"
-    boundary_color: str = "turquoise"
+    background_color: str = None
+    world_color: str = None
+    background_png: str | None = None
+    boundary_color: str = None
     body_color_override: str | None = None
+    theme_configs: dict[str, BodyThemeConfig] = field(default_factory=dict)
     show_axes: bool = False
     equal_aspect: bool = True
     frame_on: bool = False  # usually off for “satisfying” clips
     padding: float = 0.1   # fraction of figure size to pad around content
     show_debug: bool = False
+    fps: int = 30
     
 
 
 class MatplotlibRenderer:
-    def __init__(self, config: RendererConfig | None = None, body_static: dict[int, BodyStaticSnapshot] | None = None):
+    def __init__(self, config: RendererConfig | None = None, 
+                 body_static: dict[int, BodyStaticSnapshot] | None = None,
+                 background_geom: BoxGeometry | None = None,
+                 collision_effects: CollisionEffectRouter | None = None):
         self.config = config or RendererConfig()
         self.body_themes = {}#{'BodyTheme': BodyTheme}
-        if body_static is not None:
-            for _, b in body_static.items():
-                if b.theme is not None and b.theme not in self.body_themes.keys():
-                    Mod = importlib.import_module('satisfying_sims.themes', package=__package__)
-                    self.body_themes[b.theme] = getattr(Mod, b.theme)(facecolor=self.config.body_color_override)
-            for theme in self.body_themes.values():
-                theme.prepare_for_recording(body_static=body_static)
+        self.background_geom = background_geom
+        self.collision_effects = collision_effects
+        if body_static is None:
+            return
+
+        needed = {b.theme for b in body_static.values() if b.theme is not None}
+
+        # import once
+        mod = importlib.import_module("satisfying_sims.themes", package=__package__)
+
+        for theme_name in needed:
+            ThemeCls = THEME_REGISTRY.get(theme_name, None)
+            if ThemeCls is None:
+                raise ValueError(f"Unknown theme '{theme_name}'")
+
+            theme_cfg = self.config.theme_configs.get(theme_name, None)
+            if theme_cfg is None:
+                # either create a default, or raise with a clear error
+                #theme_cfg = ThemeCls.default_config()  # if you implement this
+                raise ValueError(f"Missing theme config for {theme_name}")
+
+            self.body_themes[theme_name] = ThemeCls(
+                config=theme_cfg
+            )
+
+        for theme in self.body_themes.values():
+            theme.prepare_for_recording(body_static=body_static)
         self.fig = None
         self.ax = None
         self._axes_rect = None
         self._hud_text = None
         self._caption_text = None
-        self.world_text_pad = 0.01
+        self.world_text_pad = 0.015
         self.line_gap = 0.07
     
-    def _init_figure(self, world_aspect: float):
+    def _init_figure(self, world: World | None = None):
+        world_aspect = world.boundary.width / world.boundary.height if world is not None else 1.0
         fig, ax = plt.subplots(
-        figsize=fig_inches_from_pixels(width_px=self.config.width_px, 
-                           height_px=self.config.height_px, 
-                           dpi=self.config.dpi, 
-                           figsize_default=self.config.figsize),
-        dpi=self.config.dpi,
-    )
-
-        bg = self.config.background_color if self.config.background_color is not None else "none"
-        fig.patch.set_facecolor(bg)
-
-        self._axes_rect = self._compute_axes_rect(fig, pad=self.config.padding, world_aspect=world_aspect)
-        ax.set_position(self._axes_rect)
+        figsize=fig_inches_from_pixels(
+            width_px=self.config.width_px, 
+            height_px=self.config.height_px, 
+            dpi=self.config.dpi, 
+            figsize_default=self.config.figsize),
+            dpi=self.config.dpi,
+        )
+        if self.collision_effects is not None:
+            self.collision_effects.clear_cache()
+        if self.config.background_png is not None:
+            img = Image.open(f'{self.config.background_png}/raw.png').convert("RGBA")
+            arr = np.asarray(img)
+            # Draw at (0, 0) in figure pixel coordinates
+            self._axes_rect = self.background_geom.axes_rect()
+            fig.figimage(arr, xo=0, yo=0, zorder=-10)
+            self._axes_rect = self.background_geom.axes_rect()
+        else:
+            bg = self.config.background_color if self.config.background_color is not None else "none"
+            fig.patch.set_facecolor(bg)
+            self._axes_rect = compute_axes_rect(fig, pad=self.config.padding, world_aspect=world_aspect)
+        
+        self._setup_axes(ax) #TODO: compute aspect from world boundary
         top = self._axes_rect[1] + self._axes_rect[3]
-        hud_text_y = top + self.world_text_pad
-        self._hud_text = fig.text(0.5, hud_text_y, 
+        bottom = self._axes_rect[1]
+        self._hud_text = fig.text(0.5, bottom-self.world_text_pad, 
                                   "", 
-                                  ha="center", va="bottom", 
+                                  ha="center", va="top", 
                                   size=14, 
                                   color="white")
-        self._caption_text = fig.text(0.5, self.line_gap+hud_text_y, 
-                                     "Each time two bodies collide,\n" + "a new one spawns.", 
+        self._caption_text = fig.text(0.5, top+self.world_text_pad,
+                                     "Each time two disco balls collide,\n" + "a new one spawns.", 
                                      ha="center", va="bottom", 
                                      size=18, 
                                      color="white")
@@ -86,17 +127,11 @@ class MatplotlibRenderer:
                                   ha="center", va="top", 
                                   size=14, 
                                   color="white")
+        if world is not None:
+            self._draw_boundary(world, ax)
+
 
         self.fig, self.ax = fig, ax
-    
-    def _compute_axes_rect(self, fig, pad: float, world_aspect: float) -> list[float]:
-        fig_aspect = fig.get_figwidth() / fig.get_figheight()
-        return [
-            pad,
-            (1 - (1 - 2*pad) / (world_aspect / fig_aspect)) / 2,
-            1 - 2*pad,
-            (1 - 2*pad) / (world_aspect / fig_aspect),
-        ]
     
     def _update_debug_overlay(self, frame):
         dbg = frame.rates or {}
@@ -115,29 +150,36 @@ class MatplotlibRenderer:
         body_static: dict[int, BodyStaticSnapshot] | None = None,
         *,
         ax: Axes,
-        world_for_boundary: "World" | None = None,
+        frame_idx: int = 0,
     ) -> None:
         """
         Draw a single frame snapshot onto the given Axes.
         """
-        ax.clear()
-        self._setup_axes(ax) #TODO: compute aspect from world boundary
-        self._hud_text.set_text(f"Body Count: {len(snapshot.bodies)}")
+        for theme in self.body_themes.values():
+            theme.begin_frame() #TODO only call on themes in the frame
+        self._hud_text.set_text(f"Disco Ball Count: {len(snapshot.bodies)}")
+        
+        if self.collision_effects is not None:
+            self.collision_effects.begin_frame(frame_idx)
+            self.collision_effects.ingest_events(snapshot.events, snapshot, body_static)
+            self.collision_effects.draw(ax, frame_idx)
+            self.collision_effects.end_frame()
         if self.config.show_debug:
             self._update_debug_overlay(snapshot)
         else:
             self._debug_text.set_text("")
-        if world_for_boundary is not None:
-            self._draw_boundary(world_for_boundary, ax)
-
+        
         for body_id, state in snapshot.bodies.items():
             theme = self.body_themes[body_static[body_id].theme]
             theme.draw_body(
                 ax=ax,
                 body_id=body_id,
                 state=state,
-                static=body_static[body_id] or None,
+                static=body_static[body_id],
             )
+        for theme in self.body_themes.values():
+            theme.end_frame()
+        
     # --- helpers ---
 
     def _setup_axes(self, ax: Axes) -> None:

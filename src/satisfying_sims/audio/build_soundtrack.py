@@ -17,6 +17,7 @@ from satisfying_sims.audio.mapping import (
     gain_from_impulse,
     gain_constant,
     pitch_from_relative_speed,
+    pitch_from_impulse
 )
 from satisfying_sims.audio.event_rejection import RejectConfig, make_keep_prob
 
@@ -81,15 +82,15 @@ def make_default_event_sound_rules(
     if "CollisionEvent" in default_sample_names:
         rules["CollisionEvent"] = EventSoundRule(
             sample_name=default_sample_names["CollisionEvent"],
-            gain_fn=gain_from_impulse,
-            pitch_fn=pitch_from_relative_speed,
+            gain_fn=lambda s: gain_from_impulse(s, i0=50, sigma_i=25, max_factor_log=0.75, base=1.0),
+            pitch_fn=lambda s: pitch_from_relative_speed(s, v0=50, sigma_v=25, max_factor_log=0.75, base=1.0)
         )
 
     if "HitWallEvent" in default_sample_names:
         rules["HitWallEvent"] = EventSoundRule(
             sample_name=default_sample_names["HitWallEvent"],
-            gain_fn=lambda s: gain_constant(s, 0.7),
-            pitch_fn=lambda s: 1.0,
+            gain_fn=lambda s: gain_from_impulse(s, i0=50, sigma_i=25, max_factor_log=0.75, base=1.0),
+            pitch_fn=lambda s: pitch_from_impulse(s, i0=75, sigma_i=37.5, max_factor_log=0.3, base=1.0),
         )
 
     # If you add more event types, configure them here using default_sample_names[...]    

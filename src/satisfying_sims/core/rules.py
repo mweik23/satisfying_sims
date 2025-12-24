@@ -78,13 +78,11 @@ class SpawnOnCollision(Rule):
                 continue
             # 3) Actually create the body in the world #TODO: expand to support different kinds of bodies
             child = create_circle_body(
-                pos=pos,
-                vel=vel,
+                pos=pos, 
+                vel=vel, 
                 radius=child_radius,
                 mass=props["mass"],
-                color=props["color"] if world.color_sampler is None else None,
-                color_sampler=world.color_sampler,
-                theme=props['theme']
+                appearance_policy=world.appearance_policy
             ) if props["kind"] == "circle" else None
             if child is not None:
                 try:

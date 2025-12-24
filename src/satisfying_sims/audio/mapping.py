@@ -76,14 +76,16 @@ class EventSoundMapper:
 
 def gain_from_impulse(
     snap: EventSnapshot,
-    scale: float = 0.05,
-    max_gain: float = 1.0,
+    i0: float = 50,
+    sigma_i: float = 25,
+    max_factor_log: float = 7/12,
+    base : float = 1.0
 ) -> float:
     """
     Example: gain ∝ impulse (from payload["impulse"]), clipped at max_gain.
     """
     impulse = float(snap.ev.payload.get("impulse", 1.0))
-    return min(max_gain, scale * abs(impulse))
+    return base * 2**(max_factor_log * np.tanh((impulse - i0) / sigma_i))
 
 
 def gain_constant(
@@ -96,9 +98,10 @@ def gain_constant(
 
 def pitch_from_relative_speed(
     snap: EventSnapshot,
-    base: float = 1.0,
-    spread: float = 0.2,
-    v_scale: float = 0.1,
+    v0: float = 50,
+    sigma_v: float = 25,
+    max_factor_log: float = 7/12,
+    base : float = 1.0
 ) -> float:
     """
     Example: pitch slightly increases with relative_speed in payload.
@@ -106,5 +109,20 @@ def pitch_from_relative_speed(
     Maps relative_speed via tanh to [base - spread, base + spread].
     """
     v = float(snap.ev.payload.get("relative_speed", 1.0))
-    offset = spread * np.tanh(v_scale * v)
-    return base + offset
+    
+    return  base * 2**(max_factor_log * np.tanh((v - v0) / sigma_v))
+
+def pitch_from_impulse(
+    snap: EventSnapshot,
+    i0: float = 50,
+    sigma_i: float = 25,
+    max_factor_log: float = 7/12,
+    base : float = 1.0
+) -> float:
+    """
+    Example: pitch slightly increases with impulse in payload.
+
+    Maps impulse via a clipped linear function to [base - 2*spread, base + 2*spread].
+    """
+    impulse = float(snap.ev.payload.get("impulse", 1.0))
+    return base * 2**(max_factor_log * np.tanh((impulse - i0) / sigma_i))

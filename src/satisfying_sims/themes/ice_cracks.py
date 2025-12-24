@@ -15,15 +15,27 @@ from satisfying_sims.core.recording import (
     BodyStaticSnapshot,
     BodyStateSnapshot,
 )
-from satisfying_sims.themes.base import BodyTheme
+from satisfying_sims.core.appearances import ColorAppearancePolicy
+from satisfying_sims.visual.color_sampler import ColorSampler
+from satisfying_sims.themes.base import BodyTheme, BodyThemeConfig
 from satisfying_sims.utils.random import rng_for_key
 
+@dataclass
+class IceThemeConfig(BodyThemeConfig):
+    body_cmap: str | None = None
+    def make_appearance_policy(self):
+        return ColorAppearancePolicy(
+            theme="ice_cracks", 
+            color_sampler=ColorSampler(cmap=self.body_cmap) if self.body_cmap is not None else None
+        )
+ 
 @dataclass
 class IceCracksTheme(BodyTheme):
     """
     Bodies look like translucent ice cubes with cracks that depend only on
     the collision_count stored in BodyStateSnapshot.
     """
+    config: IceThemeConfig
     max_cracks_per_body: int = 10
     facecolor: tuple[float, float, float, float] | None = (0.85, 0.93, 1.0, 0.6)
     edgecolor: tuple[float, float, float, float] = (0.9, 0.98, 1.0, 1.0)
@@ -32,9 +44,9 @@ class IceCracksTheme(BodyTheme):
     rim_color: tuple[float, float, float, float] = (0.6, 0.85, 1.0, 0.22)        # subtle rim
     line_color: tuple[float, float, float, float] = (0.75, 0.9, 1.0, 1.0)
     three_d_effects: bool = False
-
     # runtime fields: filled in prepare_for_recording
     crack_geometries: Dict[int, List[np.ndarray]] | None = None
+    extras: dict = None    # for compatibility with BodyTheme base class
 
     def prepare_for_recording(self, body_static: dict[int, BodyStaticSnapshot] | None = None) -> None:
         """
@@ -54,6 +66,20 @@ class IceCracksTheme(BodyTheme):
                 rng=crack_rng,
                 n_cracks=self.max_cracks_per_body,
             )
+    def begin_frame(self) -> None:
+        """Called once per frame before any draw_body calls."""
+        self._seen_this_frame.clear()
+
+    def end_frame(self) -> None:
+        """Called once per frame after all draw_body calls."""
+        # Remove artists for bodies that were not drawn this frame (despawned/offscreen)
+        for body_id in list(self._artists.keys()):
+            if body_id not in self._seen_this_frame:
+                artist = self._artists.pop(body_id)
+                try:
+                    artist.remove()
+                except Exception:
+                    pass
 
     def draw_body(
         self,
@@ -77,7 +103,7 @@ class IceCracksTheme(BodyTheme):
                 radius,
                 linewidth=radius / 4,
                 edgecolor=self.edgecolor,
-                facecolor=self.facecolor if self.facecolor is not None else static.color,
+                facecolor=self.facecolor if self.config.body_cmap is None else static.color,
                 zorder=2,
             )
             ax.add_patch(circle)

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 from .shapes import Body, CircleCollider
 from .events import CollisionEvent, BaseEvent
 from .boundary import Boundary
+from satisfying_sims.utils.random import rng
 
 
 def step_physics(world: World, dt: float) -> List[BaseEvent]:
@@ -24,6 +25,7 @@ def step_physics(world: World, dt: float) -> List[BaseEvent]:
         acc = world.gravity - world.drag * b.vel
         b.vel += acc * dt
         b.pos += b.vel * dt
+        b.angle += b.angular_velocity * dt
 
     # Boundary resolution
     for b in world.bodies.values():
@@ -87,7 +89,10 @@ def _circle_circle_collision(world: World, a: Body, b: Body, t: float) -> Collis
     _positional_correction(a, b, n, penetration)
 
     contact_point = a.pos + n * a.collider.radius
-
+    
+    a.angular_velocity = rng('physics').uniform(-2*np.pi, 2*np.pi)
+    b.angular_velocity = rng('physics').uniform(-2*np.pi, 2*np.pi)
+    
     #increment collisions
     a.collision_count += 1
     b.collision_count += 1

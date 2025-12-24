@@ -16,8 +16,8 @@ from .boundary import Boundary
 from .physics import step_physics
 from .events import BaseEvent
 from .recording import snapshot_world, BodyStaticSnapshot
-from satisfying_sims.visual.color_sampler import ColorSampler
 from satisfying_sims.audio.estimate_rate import EventRateEstimator
+from .appearances import AppearancePolicy
 
 if TYPE_CHECKING:
     from .rules import Rule
@@ -29,7 +29,7 @@ class World:
     drag: float
     restitution: float
     bodies: dict[int, Body] = field(default_factory=dict)
-    color_sampler: ColorSampler | None = None
+    appearance_policy: AppearancePolicy | None = None
     time: float = 0.0
     _next_id: int = 0
     rules: List[Rule] = field(default_factory=list)

@@ -38,6 +38,8 @@ class BodyStaticSnapshot:
     color: Tuple[float, float, float]  # normalized 0–1 for matplotlib
     collider: "ColliderSnapshot"       # your existing ColliderSnapshot
     theme: str
+    sprite_type: str = ""       # e.g. "red_circle", "blue_square"
+    sprite_key: str = ""         # e.g. "red", "green" for ornaments
     # add any other truly-static fields here (e.g., radius for circles)
     
 @dataclass
@@ -46,6 +48,8 @@ class BodyStateSnapshot:
     pos: Tuple[float, float]
     vel: Tuple[float, float]
     collision_count: int
+    angle: float = 0.0
+    angular_velocity: float = 0.0
     # If you have other evolving fields (e.g. life, state), add them here.
 
 
@@ -129,6 +133,8 @@ def make_body_static_snapshot(body: "Body") -> BodyStaticSnapshot:
         mass=float(body.mass),
         color=tuple(c / 255 for c in body.color) if getattr(body, "color", None) is not None else None,
         theme=body.theme,
+        sprite_type=body.sprite_type,
+        sprite_key=body.sprite_key,
         collider=body.collider.to_snapshot(),  # your existing method
     )
 
@@ -136,9 +142,11 @@ def make_body_state_snapshot(body: "Body") -> BodyStateSnapshot:
     """Create dynamic (per-frame) state from a live Body."""
     pos = np.asarray(body.pos, dtype=float)
     vel = np.asarray(body.vel, dtype=float)
+    angle = float(getattr(body, "angle", 0.0))
     return BodyStateSnapshot(
         pos=(float(pos[0]), float(pos[1])),
         vel=(float(vel[0]), float(vel[1])),
+        angle=angle,
         collision_count=body.collision_count
     )
 
