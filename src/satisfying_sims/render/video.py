@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Sequence
 
 import shutil
 import subprocess
@@ -18,7 +18,8 @@ from satisfying_sims.utils.video_utils import PREVIEW_FFMPEG_ARGS, FINAL_FFMPEG_
 
 if TYPE_CHECKING:
     from satisfying_sims.core import SimulationRecording, World
-    from satisfying_sims.audio.event_rejection import RejectConfig
+    from satisfying_sims.utils.event_rejection import RejectConfig
+    from satisfying_sims.audio.mapping import EventSoundRule
 
 from satisfying_sims.audio.build_soundtrack import (
     build_and_save_soundtrack,
@@ -132,7 +133,9 @@ def render_video_with_audio(
     world_for_boundary: World | None = None,
     bitrate: int | None = None,
     preview: bool = False,
-    sample_names: dict[str, str] | None = None,
+    sample_map: dict[str, Any] | None = None,
+    rules: Optional[Sequence[EventSoundRule]] = None,
+    rules_cfg: list[dict] | None = None,   # your JSON-like list input
     renderer: MatplotlibRenderer | None = None,
     reject_cfg: Optional[RejectConfig] = None,
 ) -> Path:
@@ -167,7 +170,9 @@ def render_video_with_audio(
         wav_path=wav_path,
         sr=audio_sr,
         tail=audio_tail,
-        sample_names=sample_names,
+        sample_map=sample_map,
+        rules_cfg=rules_cfg,
+        rules=rules,
         reject_cfg=reject_cfg,
     )
 

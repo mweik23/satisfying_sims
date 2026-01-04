@@ -1,0 +1,14 @@
+outer_boundary:
+  type: BoxBoundary
+  params:
+    width: 100
+    height: 100
+  
+inner_walls:
+  - type: PolylineWall
+    params:
+      points:
+        - [60, 0]
+        - [60, 20]
+        - [80, 20]
+

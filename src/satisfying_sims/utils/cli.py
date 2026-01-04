@@ -9,24 +9,12 @@ def build_parser():
                         help='random seed (default: 1)')
     parser.add_argument('--frame_rate', type=int, default=60, metavar='N',
                         help='frame rate for rendering (default: 60)')
-    parser.add_argument('--duration', type=float, default=10.0, metavar='N',
+    parser.add_argument('--duration', type=float, default=None, metavar='N',
                         help='duration of the simulation in seconds (default: 10.0)')
     parser.add_argument('--outdir', type=str, default='results', metavar='N',
                         help='directory to save the rendered video (default: results)')
     parser.add_argument('--physics_rate_request', type=int, default=600, metavar='N',
                         help='requested physics simulation rate in Hz (default: 600)')
-    parser.add_argument('--rules', type=json.loads, default={}, metavar='N',
-                        help='list of rules to apply in the simulation (default: empty list)')
-    parser.add_argument('--boundary', type=json.loads, default={}, metavar='N',
-                        help='type of boundary for the simulation (default: box)')
-    parser.add_argument('--n_bodies', type=int, default=10, metavar='N',
-                        help='number of bodies in the simulation (default: 10)')
-    parser.add_argument('--body_color', type=str, default=None, metavar='N',
-                        help='color of the bodies in the simulation (default: blue)')
-    parser.add_argument('--sigma_v', type=float, default=5.0, metavar='N',
-                        help='standard deviation of the initial velocity (default: 5.0)')
-    parser.add_argument('--radius', type=float, default=1.0, metavar='N',
-                        help='radius of the bodies in the simulation (default: 1.0)')
     parser.add_argument('--bitrate', type=int, default=8000, metavar='N',
                         help='bitrate for the rendered video in kbps (default: 8000)')
     parser.add_argument('--crf', type=str, default='23', metavar='N',
@@ -56,31 +44,19 @@ def build_parser():
         help="Extra tail seconds after recording end in soundtrack.",
     )
     parser.add_argument(
-        "--sample_map",
+        "--audio_effects_cfg",
         type=json.loads,
         default=None,
         help=(
             "JSON dict mapping event types to sample names, "
-            'e.g. \'{"CollisionEvent": "metal_clang", "BoundaryCollisionEvent": "wood_thud"}\''
+            'e.g. \'{"CollisionEvent": {"asset": "metal_clang"}, "BoundaryCollisionEvent": {"asset": "wood_thud"}}\''
         ),
-    )
-    parser.add_argument(
-        "--body_theme",
-        type=str,
-        default=None,
-        help="theme for bodies in the simulation"
     )
     parser.add_argument(
         "--sprite_dir",
         type=str,
         default='assets/sprites',
         help="directory containing sprite images for SpriteTheme"
-    )
-    parser.add_argument(
-        "--sprite_type",
-        type=str,
-        default='ornament',
-        help="type of sprite theme to use (e.g., ornament, ice_cracks)"
     )
     parser.add_argument(
         "--background_color",
@@ -142,12 +118,6 @@ def build_parser():
         help="color of the boundary in the simulation (default: turquoise)"
     )
     parser.add_argument(
-        "--body_cmap",
-        type=str,
-        default=None,
-        help="colormap for the bodies in the simulation (default: viridis)"
-    )
-    parser.add_argument(
         "--show_debug",
         action='store_true',
         help="whether to show debug information overlay in the rendered video"
@@ -202,6 +172,81 @@ def build_parser():
         type=str,
         default="assets/effects",
         help="directory containing collision effect assets"
+    )
+    parser.add_argument(
+        "--max_restarts",
+        type=int,
+        default=25,
+        help="maximum number of simulation restarts to attempt"
+    )
+    parser.add_argument(
+        "--max_bodies",
+        type=int,
+        default=None,
+        help="maximum number of bodies before stopping the simulation"
+    )
+    parser.add_argument(
+        "--tmin_1",
+        type=float,
+        default=0.0,
+        help="minimum time to check for num_bodies_1 condition"
+    )
+    parser.add_argument(
+        "--num_bodies_1",
+        type=int,
+        default=None,
+        help="minimum number of bodies required at time tmin_1"
+    )
+    parser.add_argument(
+        "--delta_t21_min",
+        type=float,
+        default=None,
+        help="minimum time difference between tmin_1 and tmin_2"
+    )
+    parser.add_argument(
+        "--num_bodies_2",
+        type=int,
+        default=None,
+        help="minimum number of bodies required at time tmin_1 + delta_t21_min"
+    )
+    parser.add_argument(
+        "--tmax_1",
+        type=float,
+        default=None,
+        help="maximum time by which num_bodies_1 condition must be met"
+    )
+    parser.add_argument(
+        "--sample_map",
+        type=json.loads,
+        default=None,
+        help=(
+            "JSON dict mapping event types to sample names for audio, "
+            'e.g. \'{"CollisionEvent": "ice_crack", "HitWallEvent": "bloop"}\''
+        ),
+    )
+    parser.add_argument(
+        "--preset_path",
+        type=str,
+        default="presets/preset.yaml",
+        help="path to preset configuration file"
+    )
+    parser.add_argument(
+        "--max_frac_diff",
+        type=float,
+        default=None,
+        help="maximum allowed fractional difference between body counts for restart condition"
+    )
+    parser.add_argument(
+        "--max_frac_diff_thresh",
+        type=int,
+        default=None,
+        help="minimum total body count for max_frac_diff condition to apply"
+    )
+    parser.add_argument(
+        "--overlay_png",
+        type=str,
+        default=None,
+        help="path to a PNG image to overlay on the simulation"
     )
     return parser
 

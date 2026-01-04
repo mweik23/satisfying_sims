@@ -1,0 +1,7 @@
+collision_effects:
+  - event_type: CollisionEvent
+    asset: firework.npz
+    size_world: 40
+    cmap: hsv
+    event_filter:
+      same_type: false

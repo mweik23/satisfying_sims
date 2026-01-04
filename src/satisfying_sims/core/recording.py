@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Mapping, Sequence, Literal, Any, Iterator
+from typing import TYPE_CHECKING, Mapping, Sequence, Literal, Any, Iterator, Union, List, Dict, Optional, Callable  
 from pathlib import Path
 import pickle
 import lzma
@@ -37,9 +37,9 @@ class BodyStaticSnapshot:
     mass: float
     color: Tuple[float, float, float]  # normalized 0–1 for matplotlib
     collider: "ColliderSnapshot"       # your existing ColliderSnapshot
-    theme: str
-    sprite_type: str = ""       # e.g. "red_circle", "blue_square"
-    sprite_key: str = ""         # e.g. "red", "green" for ornaments
+    theme_id: str | None = None
+    sprite_key: str | None = None
+    tags: Mapping[str, Any] = field(default_factory=dict)
     # add any other truly-static fields here (e.g., radius for circles)
     
 @dataclass
@@ -52,6 +52,12 @@ class BodyStateSnapshot:
     angular_velocity: float = 0.0
     # If you have other evolving fields (e.g. life, state), add them here.
 
+@dataclass
+class RuleStateSnapshot:
+    """Snapshot of a Rule's state at a given time."""
+    name: str
+    activated: bool
+    t_last_trigger: float | None = None
 
 @dataclass
 class EventSnapshot:
@@ -68,12 +74,110 @@ class EventContext:
     rates: dict[str, float]   # or Mapping[str, float]
     frame_index: int | None = None
 
+# --- Boundary recording snapshots ---
+
+@dataclass
+class WallStaticSnapshot:
+    """Static wall metadata (no points)."""
+    id: str
+    kind: str                 # e.g. "PolylineWall"
+    closed: bool
+    one_sided: bool
+    normal_sign: float
+    constrains_domain: bool
+    tags: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class BoundaryStaticSnapshot:
+    """
+    Static boundary definition saved separately from frames.
+    - outer: static domain definition (box/ellipse/etc.)
+    - inner_walls: static wall metadata (ids, flags), but not time-dependent points
+    """
+    outer_kind: str
+    outer_attrs: dict[str, Any]
+    inner_walls: list[WallStaticSnapshot] = field(default_factory=list)
+
+
+@dataclass
+class BoundaryStateSnapshot:
+    """
+    Per-frame time-dependent boundary state.
+    Records only the wall points for inner walls, in the same order as BoundaryStaticSnapshot.inner_walls.
+    """
+    wall_points: list[list[tuple[float, float]]]  # [wall_index][vertex_index](x,y)
+
+def make_boundary_static_snapshot(boundary: Any) -> BoundaryStaticSnapshot:
+    """
+    Create the static boundary snapshot.
+    Expects something like a WallBoundary with .outer and .walls (inner walls).
+    If you store inner/outer walls differently, tweak here.
+    """
+    outer = getattr(boundary, "outer", boundary)  # allow passing outer directly
+
+    outer_kind = type(outer).__name__
+    if outer_kind == "BoxBoundary":
+        outer_attrs = {"width": float(outer.width), "height": float(outer.height)}
+    elif outer_kind == "EllipseBoundary":
+        outer_attrs = {"a": float(outer.a), "b": float(outer.b)}
+    else:
+        # fallback: try a method if you add one later
+        if hasattr(outer, "to_state"):
+            outer_attrs = dict(outer.to_state())
+        else:
+            raise TypeError(f"Unsupported outer boundary type: {outer_kind}")
+
+    inner_walls = []
+    for i, w in enumerate(getattr(boundary, "walls", [])):
+        wid = getattr(w, "id", None)
+        if wid is None:
+            wid = f"inner_wall_{i}"
+
+        inner_walls.append(
+            WallStaticSnapshot(
+                id=str(wid),
+                kind=type(w).__name__,
+                closed=bool(getattr(w, "closed", False)),
+                one_sided=bool(getattr(w, "one_sided", False)),
+                normal_sign=float(getattr(w, "normal_sign", 1.0)),
+                constrains_domain=bool(getattr(w, "constrains_domain", False)),
+                tags=dict(getattr(w, "tags", {})) if getattr(w, "tags", None) is not None else {},
+            )
+        )
+
+    return BoundaryStaticSnapshot(
+        outer_kind=outer_kind,
+        outer_attrs=outer_attrs,
+        inner_walls=inner_walls,
+    )
+
+
+def make_boundary_state_snapshot(boundary: Any) -> BoundaryStateSnapshot:
+    """
+    Create the per-frame boundary snapshot (time dependent part only).
+    Records w.points for each inner wall in boundary.walls order.
+    """
+    wall_points: list[list[tuple[float, float]]] = []
+
+    for w in getattr(boundary, "walls", []):
+        pts = np.asarray(getattr(w, "points"), dtype=float)
+        if pts.ndim != 2 or pts.shape[1] != 2:
+            raise ValueError(f"Wall points must be (N,2); got {pts.shape} for {type(w).__name__}")
+        wall_points.append([(float(x), float(y)) for x, y in pts])
+
+    return BoundaryStateSnapshot(wall_points=wall_points)
+
+
 @dataclass
 class FrameSnapshot:
     t: float
     bodies: dict[int, BodyStateSnapshot]
     events: list[EventSnapshot] = field(default_factory=list)
+    rule_state: list[RuleStateSnapshot] | None = None
+    body_counts: dict[str, int] | None = None
     rates: dict[str, float] | None = None
+    boundary: BoundaryStateSnapshot | None = None
 
 
 @dataclass
@@ -86,6 +190,7 @@ class SimulationRecording:
     frames: list[FrameSnapshot] = field(default_factory=list)
     meta: dict[str, Any] = field(default_factory=dict)
     body_static: Dict[int, BodyStaticSnapshot] = field(default_factory=dict)
+    boundary_static: BoundaryStaticSnapshot | None = None
 
     def add_frame(self, frame: FrameSnapshot) -> None:
         self.frames.append(frame)
@@ -132,9 +237,9 @@ def make_body_static_snapshot(body: "Body") -> BodyStaticSnapshot:
         id=body.id,
         mass=float(body.mass),
         color=tuple(c / 255 for c in body.color) if getattr(body, "color", None) is not None else None,
-        theme=body.theme,
-        sprite_type=body.sprite_type,
+        theme_id=body.theme_id,
         sprite_key=body.sprite_key,
+        tags=body.tags,
         collider=body.collider.to_snapshot(),  # your existing method
     )
 
@@ -150,10 +255,12 @@ def make_body_state_snapshot(body: "Body") -> BodyStateSnapshot:
         collision_count=body.collision_count
     )
 
+
 def snapshot_world(world, t: float, 
     events: list[Event],
     *,
-    body_static_registry: Dict[int, BodyStaticSnapshot]
+    body_static_registry: Dict[int, BodyStaticSnapshot],
+    boundary: Any | None = None,
 ) -> FrameSnapshot:
     
     bodies_state: Dict[int, BodyStateSnapshot] = {}
@@ -168,7 +275,14 @@ def snapshot_world(world, t: float,
 
         # Per-frame dynamic state
         bodies_state[body.id] = make_body_state_snapshot(body)
-
+    rule_state = []
+    for rule in world.rules:
+        rule_state.append(
+            RuleStateSnapshot(
+                name=type(rule).__name__,
+                activated=rule.activated,
+            )
+        )
     event_snaps: list[EventSnapshot] = []
     for e in events:
         # adapt to your Event hierarchy
@@ -181,4 +295,13 @@ def snapshot_world(world, t: float,
                 payload=e.to_payload_dict()
             )
         )
-    return FrameSnapshot(t=t, bodies=bodies_state, events=event_snaps, rates={})
+    boundary_state = make_boundary_state_snapshot(boundary) if boundary is not None else None
+    return FrameSnapshot(
+        t=t, 
+        bodies=bodies_state, 
+        events=event_snaps, 
+        rule_state=rule_state, 
+        body_counts=dict(world.body_counter), 
+        rates={},
+        boundary=boundary_state
+)

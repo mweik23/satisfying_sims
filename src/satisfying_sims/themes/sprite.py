@@ -10,6 +10,8 @@ from satisfying_sims.render.sprites import (
     SpriteGeom,
     ornament_geom,
     discoball_geom,
+    firework_rocket_geom,
+    fireball_geom,
     sprite_extent_for_circle_center,
 )
 from satisfying_sims.core.recording import BodyStaticSnapshot
@@ -29,29 +31,37 @@ class SpriteAsset:
 
 @dataclass(frozen=True)
 class SpriteThemeConfig(BodyThemeConfig):
-    #TODO: make sprite theme handle multiple sprite_types
     sprite_paths: dict[str, Path]
     sprite_type: str = "ornament"  # future-proof
-    alpha_thresh: int = 0.5
+    alpha_thresh: int = 25
     zorder: int = 5
     interpolation: str = "bilinear"
     origin: str = "upper"
+    rotation_policy: str = "random"  # "point_forward" or "random" set in theme_config_factory.py
+    HUD_text: str = "Body Count: "
     
-    def make_appearance_policy(self) -> "SpriteAppearancePolicy":
+    def make_appearance_policy(self, theme_id) -> "SpriteAppearancePolicy":
         return SpriteAppearancePolicy(
+            theme_id=theme_id,
             sprite_type=self.sprite_type,
             sprite_keys=tuple(self.sprite_paths.keys()),
+            rotation_policy=self.rotation_policy,
         )
-import matplotlib.transforms as mtransforms
 
 class SpriteTheme(BodyTheme):
     def __init__(self, config: SpriteThemeConfig):
         if config.sprite_type == "ornament":
             geom_fn = ornament_geom
-        if config.sprite_type == "disco_ball":
+        elif config.sprite_type == "disco_ball":
             geom_fn = discoball_geom
+        elif config.sprite_type == "firework_rocket":
+            geom_fn = firework_rocket_geom
+        elif config.sprite_type == "fireball":
+            geom_fn = fireball_geom
         else:
             raise ValueError(f"Unknown sprite_type: {config.sprite_type}")
+        self.config = config
+        self.HUD_text = config.HUD_text
 
         # Preprocess once
         self.preprocessed_sprites = {
@@ -146,6 +156,7 @@ class SpriteTheme(BodyTheme):
         sprite_key = static.sprite_key  # rely on it existing
         asset = self.sprites[sprite_key]
         img, geom = asset.image, asset.geom
+        # debug print shape of img
         extent = sprite_extent_for_circle_center(x=x, y=y, R=R, img=img, geom=geom)
 
         artist = self._artists.get(body_id)

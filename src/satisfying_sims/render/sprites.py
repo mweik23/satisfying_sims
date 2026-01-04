@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image
 
 
-def build_sprite_paths(asset_root: Path, sprite_type: str) -> dict[str, Path]:
+def build_sprite_paths(asset_root: Path, sprite_type: str, keys=None) -> dict[str, Path]:
     # e.g. assets/sprites/ornament
     sprite_dir = asset_root / f"{sprite_type}"
     paths = sorted(sprite_dir.glob("*.png"))
@@ -16,6 +16,9 @@ def build_sprite_paths(asset_root: Path, sprite_type: str) -> dict[str, Path]:
         raise FileNotFoundError(f"No PNGs found in {sprite_dir}")
 
     # key = filename stem (or implement your own mapping)
+    if keys is not None:
+        return {p.stem: p for p in paths if p.stem in keys}
+    
     return {p.stem: p for p in paths}
 
 def load_rgba(path: str | Path) -> np.ndarray:
@@ -106,6 +109,45 @@ def discoball_geom(img: np.ndarray) -> SpriteGeom:
     cy_px = h / 2.0
     return SpriteGeom(cx_px=cx_px, cy_px=cy_px, r_px=r_px)
 
+def firework_rocket_geom(img: np.ndarray) -> SpriteGeom:
+    """
+    Disco ball assumption:
+      - ball is close to a circle
+    
+    if there is any oblate distrortion we average the width and height for radius
+    the center is at the center of the image
+    """
+    if img.ndim != 3 or img.shape[-1] != 4:
+        raise ValueError(f"Expected RGBA image (H, W, 4), got shape {img.shape}")
+
+    h, w = img.shape[:2]
+    left = w / 3.0
+    right = 0.82 * w
+    r_px = (right - left) / 2.0
+    cx_px = (left + right) / 2.0
+    cy_px = h / 2.0
+    return SpriteGeom(cx_px=cx_px, cy_px=cy_px, r_px=r_px)
+
+def fireball_geom(img: np.ndarray) -> SpriteGeom:
+    """
+    Ornament assumption:
+      - knob is at top of the cropped image
+      - circular part touches the bottom of the cropped image
+      - image width corresponds to the circle diameter
+
+    Therefore:
+      r_px = W/2
+      cx_px = W/2
+      cy_px = H - r_px  (one radius above the bottom)
+    """
+    if img.ndim != 3 or img.shape[-1] != 4:
+        raise ValueError(f"Expected RGBA image (H, W, 4), got shape {img.shape}")
+
+    h, w = img.shape[:2]
+    r_px = 0.6 * h
+    cx_px = w - r_px
+    cy_px = h / 2.0
+    return SpriteGeom(cx_px=cx_px, cy_px=cy_px, r_px=r_px)
 
 def sprite_extent_for_circle_center(
     *,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Optional, Mapping
+from typing import Iterable, Optional, Mapping, Sequence
 import subprocess
 
 import numpy as np
@@ -17,9 +17,10 @@ from satisfying_sims.audio.mapping import (
     gain_from_impulse,
     gain_constant,
     pitch_from_relative_speed,
-    pitch_from_impulse
+    pitch_from_impulse,
+    rules_from_config,
 )
-from satisfying_sims.audio.event_rejection import RejectConfig, make_keep_prob
+from satisfying_sims.utils.event_rejection import RejectConfig, make_keep_prob
 
 # ---------- Core: snapshots -> audio buffer ---------- #
 
@@ -51,7 +52,7 @@ def build_soundtrack_from_snapshots(
 # ---------- Default rules + full “build & save” helper ---------- #
 
 def make_default_event_sound_rules(
-    sample_names: Optional[Mapping[str, str]] = None,
+    sample_map: Optional[Mapping[str, str]] = None,
 ) -> dict[str, EventSoundRule]:
     """
     Default mapping from EventSnapshot.type -> EventSoundRule.
@@ -72,8 +73,8 @@ def make_default_event_sound_rules(
     }
 
     # Overlay user-provided sample names
-    if sample_names:
-        for event_type, sample_name in sample_names.items():
+    if sample_map:
+        for event_type, sample_name in sample_map.items():
             default_sample_names[event_type] = sample_name
 
     # Build rules from final mapping
@@ -81,13 +82,15 @@ def make_default_event_sound_rules(
 
     if "CollisionEvent" in default_sample_names:
         rules["CollisionEvent"] = EventSoundRule(
+            event_type="CollisionEvent",
             sample_name=default_sample_names["CollisionEvent"],
             gain_fn=lambda s: gain_from_impulse(s, i0=50, sigma_i=25, max_factor_log=0.75, base=1.0),
             pitch_fn=lambda s: pitch_from_relative_speed(s, v0=50, sigma_v=25, max_factor_log=0.75, base=1.0)
         )
 
     if "HitWallEvent" in default_sample_names:
-        rules["HitWallEvent"] = EventSoundRule(
+        rules['HitWallEvent'] = EventSoundRule(
+            event_type="HitWallEvent",
             sample_name=default_sample_names["HitWallEvent"],
             gain_fn=lambda s: gain_from_impulse(s, i0=50, sigma_i=25, max_factor_log=0.75, base=1.0),
             pitch_fn=lambda s: pitch_from_impulse(s, i0=75, sigma_i=37.5, max_factor_log=0.3, base=1.0),
@@ -104,43 +107,39 @@ def build_and_save_soundtrack(
     *,
     sr: int = 44100,
     tail: float = 0.3,
-    rules: Optional[dict[str, EventSoundRule]] = None,
-    sample_names: dict[str, str] | None = None,
+    rules: Optional[Sequence[EventSoundRule]] = None,
+    rules_cfg: dict[str, dict] | None = None,   # your JSON-like list input
+    sample_map: dict[str, str] | None = None,  # keep if you still want simple overrides for defaults
     reject_cfg: Optional[RejectConfig] = None,
 ) -> Path:
-    """
-    High-level helper used by both CLI and video pipeline.
-
-    - Flattens events from the recording.
-    - Loads samples and creates AudioEngine.
-    - Uses default or supplied rules.
-    - Builds audio buffer and writes it to wav_path.
-
-    Returns
-    -------
-    Path to the written WAV file.
-    """
     samples_dir = Path(samples_dir)
     wav_path = Path(wav_path)
 
-    event_context = recording.iter_event_context()
+    event_context = list(recording.iter_event_context())
     t_end = recording.t_end
-    if t_end is None and event_context:
-        t_end = max(float(s.ev.t) for s in event_context)
-    elif t_end is None:
-        t_end = 0.0
+    if t_end is None:
+        t_end = max((float(s.ev.t) for s in event_context), default=0.0)
 
-    # 1) Load samples & engine
     samples = load_sample_bank(samples_dir, target_sr=sr, mono=True)
     engine = AudioEngine(samples, sr=sr)
 
-    # 2) Rules + mapper
-    if rules is None:
-        rules = make_default_event_sound_rules(sample_names=sample_names)
     keep_prob = make_keep_prob(reject_cfg) if reject_cfg is not None else None
-    mapper = EventSoundMapper(rules, keep_prob=keep_prob) #TODO: define keep_prob if needed
 
-    # 3) Build audio & write wav
+    if rules is None:
+        if rules_cfg is not None:
+            # choose some defaults (or make them per-event-type like before)
+            default_gain = lambda s: gain_from_impulse(s, i0=50, sigma_i=25, max_factor_log=0.75, base=1.0)
+            default_pitch = lambda s: pitch_from_impulse(s, i0=50, sigma_i=25, max_factor_log=0.75, base=1.0)
+            rules = rules_from_config(
+                rules_cfg,
+                default_gain_fn=default_gain,
+                default_pitch_fn=default_pitch,
+            )
+        else:
+            rules = make_default_event_sound_rules(sample_map=sample_map)  # update this to return list
+
+    mapper = EventSoundMapper(rules, keep_prob=keep_prob)
+
     audio = build_soundtrack_from_snapshots(
         snapshots=event_context,
         mapper=mapper,
@@ -151,6 +150,7 @@ def build_and_save_soundtrack(
     )
     engine.write_wav(str(wav_path), audio)
     return wav_path
+
 
 
 # ---------- ffmpeg mux helper ---------- #

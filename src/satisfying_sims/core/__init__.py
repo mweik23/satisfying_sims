@@ -1,10 +1,11 @@
 # src/satisfying_sims/core/__init__.py
 
-from .config import SimConfig
+from .config import SimConfig, make_world
+from .sim_decisions import SimStopRestartPolicy, SimAction
 from .world import World, run_simulation
 from .physics import step_physics
 from .shapes import Body, CircleCollider, create_circle_body
-from .boundary import Boundary, BoxBoundary
+from .boundary import Boundary, BoxBoundary, EllipseBoundary, WallBoundary
 from .rules import Rule, SpawnRandomBodies, LifetimeDecay, SplitOnHardCollision, SpawnOnCollision
 from .recording import FrameSnapshot, SimulationRecording
 from .events import (
@@ -38,4 +39,9 @@ __all__ = [
     "HitWallEvent",
     "SpawnEvent",
     "DestroyEvent",
+    "WallBoundary",
+    "EllipseBoundary",
+    "make_world",
+    "SimStopRestartPolicy",
+    "SimAction"
 ]

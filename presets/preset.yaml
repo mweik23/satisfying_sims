@@ -1,0 +1,8 @@
+# presets/fireworks.yaml
+include:
+  - body_theme.yaml
+  - sound_rules.yaml
+  - initial_conditions.yaml
+  - physics_rules.yaml
+  - effects.yaml
+  - boundary.yaml

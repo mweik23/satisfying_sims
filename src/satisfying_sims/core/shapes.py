@@ -65,16 +65,19 @@ class Body:
     id: int
     pos: np.ndarray           # shape (2,)
     vel: np.ndarray           # shape (2,)
-    mass: float
-    color: Color
     collider: Collider
     angle: float = 0.0        # in radians
     angular_velocity: float = 0.0  # in radians per second
+    mass: float = 1.0
+    restitution: float = 1.0
+    color: Color | None = None
     life: float = float("inf")
-    theme: BodyTheme | None = None
-    sprite_type: str | None = None
+    theme_id: str | None = None
     sprite_key: str | None = None
+    tags: dict[str, Any] = field(default_factory=dict)
     collision_count: int = 0
+    rotation_policy: str = "random"  # "point_forward" or "random"
+    gravity_enabled: bool = True
     state: Dict[str, Any] = field(default_factory=dict)
 
     # Convenience for current circle-only world
@@ -83,39 +86,50 @@ class Body:
         if isinstance(self.collider, CircleCollider):
             return self.collider.radius
         return self.collider.bounding_radius()
+    
+    def update_rotation(self, collision=False) -> None:
+        if self.rotation_policy == "point_forward":
+            if self.vel[0] != 0.0 or self.vel[1] != 0.0:
+                self.angle = np.arctan2(self.vel[1], self.vel[0])
+            self.angular_velocity = 0.0
+        elif self.rotation_policy == "random" and collision:
+            self.angular_velocity = rng('physics').uniform(-2*np.pi, 2*np.pi)
 
 def create_circle_body(
     pos: np.ndarray,
     vel: np.ndarray,
     color: tuple | None = None,
+    restitution: float = 1.0,
+    theme_id: str | None = None,
     appearance_policy: AppearancePolicy | None = None,
     radius: float = 1.0,
     mass: float = 1.0,
     life: float = float("inf"),
+    gravity_enabled: bool = True,
     state: dict | None = None,
     **kwargs
 ) -> Body:
     """Helper to create a circular Body with sensible defaults."""
     
     appearance = appearance_policy.sample(**kwargs) if appearance_policy is not None else {}
-    theme = appearance.get("theme", None)
-    sprite_key = appearance.get("sprite_key", None)
-    sprite_type = appearance.get("sprite_type", None)
     color = appearance.get("color", color)
+    rotation_policy = appearance_policy.rotation_policy if appearance_policy and hasattr(appearance_policy, 'rotation_policy') else "random"
+    key = appearance.get("sprite_key", None)
     
     body = Body(
-        id=None,
+        id=None, 
         pos=pos.astype(float),
         vel=vel.astype(float),
-        angle=rng("physics").uniform(0, 2*np.pi),
-        angular_velocity=rng("physics").uniform(-2*np.pi, 2*np.pi),
         mass=float(mass),
+        restitution=float(restitution),
         color=color_to_uint8(color) if type(color) is str else color,
-        theme = theme,
-        sprite_key= sprite_key,
-        sprite_type= sprite_type,
+        theme_id=theme_id,
+        sprite_key=key,
         collider=CircleCollider(radius=float(radius)),
         life=float(life),
+        gravity_enabled=gravity_enabled,
         state={} if state is None else dict(state),
+        rotation_policy=rotation_policy,
     )
+    body.update_rotation()
     return body

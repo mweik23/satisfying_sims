@@ -1,12 +1,15 @@
 # src/satisfying_sims/core/rules.py
 
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from abc import ABC, abstractmethod
 from typing import List
 from dataclasses import asdict
+from collections import deque
+
 import random
 import numpy as np
+from satisfying_sims.utils.event_rejection import RejectConfig, make_keep_prob_gnrl
 from satisfying_sims.utils.random import rng
 if TYPE_CHECKING:
     from .world import World
@@ -20,6 +23,7 @@ from .events import (
 from .shapes import Body, create_circle_body
 from .physics import get_penetration
 from satisfying_sims.utils.physics_utils import velocity_cm
+from satisfying_sims.utils.reflection import get_path
 from satisfying_sims.visual.color_sampler import ColorSampler
 
 class Rule(ABC):
@@ -34,6 +38,92 @@ class Rule(ABC):
         """
         ...
 
+class DestroyOnCollision(Rule):
+    """
+    Whenever two bodies collide, spawn a new body.
+
+    Default behavior:
+      - Child inherits kind, radius, mass, color from body A.
+      - Child is placed outside of both bodies, along the line of centers,
+        at a distance that guarantees no overlap.
+      - Child velocity is at rest in the center-of-mass frame of (A, B),
+        i.e. in world coordinates it moves with v_cm.
+    """
+
+    def __init__(self, activation_triggers: List[dict] | None = None, different_only: bool = True, event_filter: dict[str, Any] | None = None):
+        """
+        offset_margin: extra distance to keep between the child and parents'
+        surfaces, in the same units as positions/radii.
+        vel_kick: additional velocity to give the spawned child, in the direction perpendicular to the line of centers.
+        """
+
+        self.different_only = different_only
+        self.activation_triggers = deque(activation_triggers) if activation_triggers is not None else deque()
+        self.activated = False
+        self.t_last_trigger = 0.0
+        self.trigger_on = None
+        self.trigger_val = None
+        self.event_filter = event_filter if event_filter is not None else {}
+        self.update_activation(0.0)
+        
+    def update_activation(self, t: float):
+        self.activated = not self.activated
+        self.t_last_trigger = t
+        next_trigger = self.activation_triggers.popleft() if self.activation_triggers else None
+        self.trigger_on = next(iter(next_trigger)) if next_trigger is not None else None
+        self.trigger_val = next_trigger.get(self.trigger_on, None) if next_trigger is not None else None
+          
+    def check_update_activation(self, t: float, n_bodies: int | None = None):
+        if self.trigger_on is None:
+            return
+        if self.trigger_on == "elapsed_time":
+            interval = self.trigger_val
+            if t - self.t_last_trigger >= interval:
+                self.update_activation(t)
+        elif self.trigger_on == "body_count":
+            assert self.activated, "body_count trigger only valid if destroying is active"
+            assert n_bodies is not None, "n_bodies must be provided for body_count trigger"
+            count = self.trigger_val
+            if n_bodies <= count:
+                self.update_activation(t)
+        elif self.trigger_on == "total_time":
+            target_time = self.trigger_val
+            if t >= target_time:
+                self.update_activation(t)
+                
+    
+    def apply(self, world: World, events: List[BaseEvent], dt: float) -> List[BaseEvent]:
+        new_events: List[BaseEvent] = []
+        if not self.activated:
+            return new_events
+        for e in events:
+            if not isinstance(e, CollisionEvent):
+                continue
+            for k, v in self.event_filter.items():
+                if getattr(e, k, None) != v:
+                    continue
+
+            a = world.bodies.get(e.a_id)
+            b = world.bodies.get(e.b_id)
+            if a is None or b is None:
+                continue
+            filter_mismatch = False
+            for k, v in self.event_filter.items():
+                if getattr(e, k, None) != v:
+                    filter_mismatch = True
+                    break
+            if filter_mismatch:
+                continue
+            #destroy both bodies
+            world.remove_body_by_id(a.id)
+            world.remove_body_by_id(b.id)
+
+            new_events.append(DestroyEvent(t=world.time, body_id=a.id, reason="collision_destroy"))
+            new_events.append(DestroyEvent(t=world.time, body_id=b.id, reason="collision_destroy"))
+
+        return new_events
+
+
 class SpawnOnCollision(Rule):
     """
     Whenever two bodies collide, spawn a new body.
@@ -46,7 +136,14 @@ class SpawnOnCollision(Rule):
         i.e. in world coordinates it moves with v_cm.
     """
 
-    def __init__(self, offset_margin: float = 0, vel_kick: float = 0.0):
+    def __init__(
+        self, 
+        offset_margin: float = 0, 
+        vel_kick: float = 0.0, 
+        activation_triggers: list[dict] | None = None, 
+        event_filter: dict[str, Any] | None = None,
+        reject_spec: dict[str, float] | None = None,
+    ):
         """
         offset_margin: extra distance to keep between the child and parents'
         surfaces, in the same units as positions/radii.
@@ -54,19 +151,66 @@ class SpawnOnCollision(Rule):
         """
         self.offset_margin = offset_margin
         self.vel_kick = vel_kick
-
+        self.event_filter = event_filter or {}
+        self.activation_triggers = deque(activation_triggers) if activation_triggers is not None else deque()
+        self.activated = False
+        self.t_last_trigger = 0.0
+        self.trigger_on = None
+        self.trigger_val = None
+        self.update_activation(0.0)
+        reject_cfg = RejectConfig(**reject_spec) if reject_spec is not None else None
+        self.keep_prob_fn = make_keep_prob_gnrl(reject_cfg) if reject_cfg is not None else (lambda lam: 1.0)
+    def update_activation(self, t: float):
+        self.activated = not self.activated
+        self.t_last_trigger = t
+        next_trigger = self.activation_triggers.popleft() if self.activation_triggers else None
+        self.trigger_on = next(iter(next_trigger)) if next_trigger is not None else None
+        self.trigger_val = next_trigger.get(self.trigger_on, None) if next_trigger is not None else None
+          
+    def check_update_activation(self, t: float, n_bodies: int | None = None):
+        if self.trigger_on is None:
+            return
+        if self.trigger_on == "elapsed_time":
+            interval = self.trigger_val
+            if t - self.t_last_trigger >= interval:
+                self.update_activation(t)
+        elif self.trigger_on == "body_count":
+            assert self.activated, "body_count trigger only valid if spawning is active"
+            assert n_bodies is not None, "n_bodies must be provided for body_count trigger"
+            count = self.trigger_val
+            if n_bodies >= count:
+                self.update_activation(t)
+        elif self.trigger_on == "total_time":
+            target_time = self.trigger_val
+            if t >= target_time:
+                self.update_activation(t)
+                
+    
     def apply(self, world: World, events: List[BaseEvent], dt: float) -> List[BaseEvent]:
         new_events: List[BaseEvent] = []
-
+        if not self.activated:
+            return new_events
         for e in events:
             if not isinstance(e, CollisionEvent):
                 continue
-
+            
             a = world.bodies.get(e.a_id)
             b = world.bodies.get(e.b_id)
             if a is None or b is None:
                 continue
-
+            filter_mismatch = False
+            for k, v in self.event_filter.items():
+                if getattr(e, k, None) != v:
+                    filter_mismatch = True
+                    break
+        
+            if filter_mismatch:
+                continue
+            
+            count = world.body_counter.get(a.theme_id, 0)
+            p_accept = self.keep_prob_fn(count)
+            if rng('physics').random() > p_accept:
+                continue
             # 1) Inherit "what kind of body is this?"
             props = self._inherit_properties(world, a, b, e)
             child_radius = props["radius"]
@@ -82,8 +226,10 @@ class SpawnOnCollision(Rule):
                 vel=vel, 
                 radius=child_radius,
                 mass=props["mass"],
-                appearance_policy=world.appearance_policy
+                theme_id=props['theme_id'],
+                appearance_policy=world.appearance_policies[props['theme_id']]
             ) if props["kind"] == "circle" else None
+        
             if child is not None:
                 try:
                     world.add_body(child)
@@ -93,7 +239,7 @@ class SpawnOnCollision(Rule):
             # Optionally let subclasses tweak the created body
             self._postprocess_child(world, child, a, b, e)
 
-            new_events.append(SpawnEvent(t=world.time, child_id=child.id, reason="collision_spawn"))
+            new_events.append(SpawnEvent(t=world.time, child_id=child.id, child_pos=pos, reason="collision_spawn"))
 
         return new_events
 
@@ -110,7 +256,7 @@ class SpawnOnCollision(Rule):
             "radius": a.collider.radius,
             "mass": a.mass,
             "color": a.color,
-            "theme": a.theme
+            "theme_id": a.theme_id
         }
 
     def _choose_pos_velocity(
@@ -144,7 +290,7 @@ class SpawnOnCollision(Rule):
             direction = delta / dist
 
         # Midpoint between A and B
-        mid = 0.5 * (pos_a + pos_b)
+        mid = e.pos
 
         # Perpendicular unit vector to 'direction'
         # If direction = (dx, dy), a perpendicular is (-dy, dx) or (dy, -dx)
@@ -164,11 +310,11 @@ class SpawnOnCollision(Rule):
         sign = rng("physics").choice(options, replace=False)
         perp *= sign
         child_pos = mid + L * perp
-        if not self._valid_child_position(world, child_pos, child_radius): #TODO: make bounding_radius when expanding beyond circles
+        if not self._valid_child_position(world, child_pos, child_radius, mid): #TODO: make bounding_radius when expanding beyond circles
             # Try the other side
             perp *= -1.0
             child_pos = mid + L * perp
-            if not self._valid_child_position(world, child_pos, child_radius):
+            if not self._valid_child_position(world, child_pos, child_radius, mid):
                 return None, None
         if use_vcm:
             v_cm = velocity_cm(a, b)
@@ -179,15 +325,16 @@ class SpawnOnCollision(Rule):
             child_vel = (max(max(np.abs(va_perp), np.abs(vb_perp)), 0.0) + self.vel_kick) * perp
         return child_pos, child_vel
 
-    def _valid_child_position(self, world: World, child_pos: np.ndarray, child_radius: float) -> bool:
+    def _valid_child_position(self, world: World, child_pos: np.ndarray, child_radius: float, collision_point: np.ndarray) -> bool:
         inbounds = world.boundary.contains(pos=child_pos, radius=child_radius)
+        same_side = world.boundary.is_same_side(child_pos, collision_point)
         overlapping = False
         for b in world.bodies.values():
             penetration, _ = get_penetration(child_pos, child_radius, b.pos, b.collider.bounding_radius()) #conservative
             if penetration is not None and penetration > 0:
                 overlapping = True
                 break
-        return inbounds and not overlapping
+        return same_side and inbounds and not overlapping
 
     def _postprocess_child(
         self,

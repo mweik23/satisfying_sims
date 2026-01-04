@@ -174,6 +174,8 @@ class CollisionEffectConfig:
     origin: str = "upper"
     white_only: bool = True
     white_mode: str = "alpha"
+    event_type: str | None = None
+    event_filter: Dict[str, Any] | None = None # e.g. {"same_type": False}
 
     # size in world units: set one of these
     size_world: float = 0.3          # width of effect in world units (default)
@@ -186,8 +188,9 @@ class CollisionEffectConfig:
     chroma_key: bool = True
     # NEW
     color_sampler: ColorSampler | None = None
-    tint_strength: float = 1.0          # 0..1
+    tint_strength: float = 0.6          # 0..1
     use_sampler_alpha: bool = False     # if True, modulate effect alpha by sampled alpha
+    event_details: dict[str, Any] = None  # optional extra details about the event type
 
 
 @dataclass
@@ -327,11 +330,20 @@ class CollisionEffectTheme:
         if self.config.jitter_world > 0:
             rng = np.random.default_rng(12345 + self._frame_idx)  #TODO use one of my rngs
             
-        allowed = getattr(self, "allowed_event_type", None)
+        allowed = getattr(self.config, "event_type", None)
 
         for e in event_snaps:
             if allowed is not None and e.type != allowed:
                 continue
+            filter_mismatch = False
+            for k, v in (self.config.event_filter or {}).items():
+                if e.payload.get(k, None) != v:
+                    filter_mismatch = True
+                    break
+            
+            if filter_mismatch:
+                continue
+            
             et = e.type
 
             if et == "CollisionEvent":

@@ -12,7 +12,7 @@ from satisfying_sims.audio.build_soundtrack import (
     build_and_save_soundtrack,
     mux_audio_into_video_ffmpeg,
 )
-from satisfying_sims.audio.event_rejection import RejectConfig
+from satisfying_sims.utils.event_rejection import RejectConfig
 '''
 example usage:
 python scripts/build_soundtrack.py --output_wav soundtrack.wav --exp_name my_experiment \

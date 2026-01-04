@@ -1,0 +1,13 @@
+physics_rules:
+  SpawnOnCollision:
+    vel_kick: 20.0
+    reject_spec:
+      lam0: 10
+      lam_max: 30
+      k: 2.0 # sharpness of transition
+      gamma: 2.0 #overall power of lam after break
+    event_filter:
+      same_type: true
+  DestroyOnCollision:
+    event_filter:
+      same_type: false

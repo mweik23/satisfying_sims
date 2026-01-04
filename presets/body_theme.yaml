@@ -1,0 +1,8 @@
+body_theme_registry:
+  sprite.ornament:
+    rotation_policy: random
+    keys:
+    - green
+    
+  sprite.firework_rocket:
+    rotation_policy: point_forward

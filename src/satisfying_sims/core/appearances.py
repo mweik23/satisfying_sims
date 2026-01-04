@@ -10,6 +10,7 @@ class AppearancePolicy(Protocol):
 
 @dataclass(frozen=True)
 class ColorAppearancePolicy:
+    theme_id: str
     theme: str
     color_sampler: ColorSampler
 
@@ -19,9 +20,19 @@ class ColorAppearancePolicy:
 
 @dataclass(frozen=True)
 class SpriteAppearancePolicy:
+    theme_id: str
     sprite_type: str
     sprite_keys: tuple[str, ...]
+    rotation_policy: str = "random"  # "point_forward" or "random"
 
     def sample(self, *, override=None, **_):
         key = override if override is not None else rng('color').choice(self.sprite_keys)
         return {"theme": "sprite", "sprite_type": self.sprite_type, "sprite_key": key}
+
+@dataclass(frozen=True)
+class BodyKind:
+    theme: str                 # e.g. "sprite", "solid_color", "ice"
+    type: str                  # your coarse bucket (see below)
+    subtype: str | None = None # optional refinement
+    key: str | None = None     # e.g. sprite_key if you want
+    tags: frozenset[str] = frozenset()  # optional labels ("glass", "small", ...)
