@@ -149,6 +149,36 @@ def fireball_geom(img: np.ndarray) -> SpriteGeom:
     cy_px = h / 2.0
     return SpriteGeom(cx_px=cx_px, cy_px=cy_px, r_px=r_px)
 
+def grenade_geom(img: np.ndarray) -> SpriteGeom:
+    """
+    Disco ball assumption:
+      - ball is close to a circle
+    
+    if there is any oblate distrortion we average the width and height for radius
+    the center is at the center of the image
+    """
+    if img.ndim != 3 or img.shape[-1] != 4:
+        raise ValueError(f"Expected RGBA image (H, W, 4), got shape {img.shape}")
+
+    h, w = img.shape[:2]
+    left = 0
+    right = 2.0 * w / 3.0
+    bottom = 0.0
+    top = 2.0 * h / 3.0
+
+    r_px = ((right-left) + (top-bottom)) / 4.0  
+    cx_px = (left + right) / 2.0
+    cy_px = (bottom + top) / 2.0
+    return SpriteGeom(cx_px=cx_px, cy_px=cy_px, r_px=r_px)
+
+GEOM_REGISTRY = {
+    "ornament": ornament_geom,
+    "discoball": discoball_geom,
+    "firework_rocket": firework_rocket_geom,
+    "fireball": fireball_geom,
+    "grenade": grenade_geom,
+}
+
 def sprite_extent_for_circle_center(
     *,
     x: float,

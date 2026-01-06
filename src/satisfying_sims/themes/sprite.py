@@ -9,9 +9,7 @@ import numpy as np
 from satisfying_sims.render.sprites import (
     SpriteGeom,
     ornament_geom,
-    discoball_geom,
-    firework_rocket_geom,
-    fireball_geom,
+    GEOM_REGISTRY,
     sprite_extent_for_circle_center,
 )
 from satisfying_sims.core.recording import BodyStaticSnapshot
@@ -50,15 +48,8 @@ class SpriteThemeConfig(BodyThemeConfig):
 
 class SpriteTheme(BodyTheme):
     def __init__(self, config: SpriteThemeConfig):
-        if config.sprite_type == "ornament":
-            geom_fn = ornament_geom
-        elif config.sprite_type == "disco_ball":
-            geom_fn = discoball_geom
-        elif config.sprite_type == "firework_rocket":
-            geom_fn = firework_rocket_geom
-        elif config.sprite_type == "fireball":
-            geom_fn = fireball_geom
-        else:
+        geom_fn = GEOM_REGISTRY.get(config.sprite_type, None)
+        if geom_fn is None:
             raise ValueError(f"Unknown sprite_type: {config.sprite_type}")
         self.config = config
         self.HUD_text = config.HUD_text

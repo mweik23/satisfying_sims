@@ -11,7 +11,7 @@ from functools import partial
 from satisfying_sims.utils.random import rng
 from satisfying_sims.utils.reflection import get_path
 from satisfying_sims.core.recording import EventSnapshot, EventContext
-from .engine import SoundTrigger
+from .engine import SoundTrigger, SoundSegmentTrigger
 
 # Functions map EventSnapshot -> float
 GainFn = Callable[[EventSnapshot], float]
@@ -38,7 +38,69 @@ class EventSoundRule:
     def specificity(self) -> int:
         # simple measure: more filter keys => more specific
         return len(self.event_filter)
+    
+from dataclasses import dataclass
+import math
+from typing import Sequence
 
+@dataclass(frozen=True)
+class BeatGateConfig:
+    bpm: float
+    # optional: allow small timing slack, e.g. 0.02s
+    grace: float = 0.0
+
+def compute_beat_gated_windows(event_times: Sequence[float], cfg: BeatGateConfig):
+    if not event_times:
+        return []
+
+    P = 60.0 / cfg.bpm
+    ts = sorted(event_times)
+
+    windows = []
+    i = 0
+    n = len(ts)
+
+    while i < n:
+        t0 = ts[i]
+        k = 0
+        # we require at least one event in each interval [t0+kP, t0+(k+1)P + grace)
+        while True:
+            interval_start = t0 + k * P
+            interval_end   = t0 + (k + 1) * P + cfg.grace
+
+            # advance i to first event >= interval_start (should already be)
+            while i < n and ts[i] < interval_start:
+                i += 1
+
+            # if there is an event before the next beat boundary, keep going
+            if i < n and ts[i] < interval_end:
+                # consume all events in this interval (not strictly required, but keeps i moving)
+                while i < n and ts[i] < interval_end:
+                    i += 1
+                k += 1
+                continue
+
+            # missed the beat: stop exactly at the beat boundary (without grace)
+            t_end = t0 + (k + 1) * P
+            windows.append((t0, t_end))
+            break
+
+    return windows
+
+@dataclass(frozen=True)
+class BeatGatedSongRule:
+    enabled: bool
+
+    event_type: str
+    event_filter: dict[str, object]
+
+    bpm: float
+    song_sample_name: str
+    gain: float = 1.0
+    grace: float = 0.0
+    loop: bool = True
+
+    overlay_asset: str | None = None
 
 class EventSoundMapper:
     """
@@ -48,9 +110,11 @@ class EventSoundMapper:
     def __init__(
         self,
         rules: Mapping[str, EventSoundRule],
+        beat_song_rules: Mapping[str, BeatGatedSongRule] | None = None,
         keep_prob: Callable[[Any, Sequence[EventSoundRule]], float] | None = None,
     ):
-        self.rules = list(rules.values())
+        self.rules = list(rules.values() if rules else [])
+        self.beat_song_rules = list(beat_song_rules.values() if beat_song_rules else [])
         self.keep_prob = keep_prob or (lambda snap, rules: 1.0)
 
         # Optional: pre-group by event_type for speed
@@ -58,6 +122,10 @@ class EventSoundMapper:
         for r in self.rules:
             self._rules_by_type.setdefault(r.event_type, []).append(r)
 
+        self._beat_rules_by_type: dict[str, list[BeatGatedSongRule]] = {}
+        for r in self.beat_song_rules:
+            self._beat_rules_by_type.setdefault(r.event_type, []).append(r)
+            
     def _matches_filter(self, snap: Any, rule: EventSoundRule) -> bool:
         # `snap` is EventContext; event object is snap.ev
         ev = snap.ev
@@ -117,12 +185,46 @@ class EventSoundMapper:
             pitch_ratio=pitch_ratio,
         )
 
+    def _song_triggers_from_snapshots(self, snaps) -> list[SoundSegmentTrigger]:
+        out: list[SoundSegmentTrigger] = []
+
+        # For each beat rule, collect matching event times and compute windows
+        for event_type, rules in self._beat_rules_by_type.items():
+            # prefilter snaps by type once
+            type_snaps = [s for s in snaps if s.ev.type == event_type]
+
+            for rule in rules:
+                if not rule.enabled:
+                    continue
+
+                times = [
+                    float(s.ev.t)
+                    for s in type_snaps
+                    if self._matches_filter(s, rule)  # works because rule has event_filter
+                ]
+                windows = compute_beat_gated_windows(times, BeatGateConfig(bpm=rule.bpm, grace=rule.grace))
+
+                for t0, t1 in windows:
+                    out.append(SoundSegmentTrigger(
+                        t=t0,
+                        sample_name=rule.song_sample_name,
+                        duration=(t1 - t0),
+                        sample_offset=0.0,     # restart each time
+                        gain=rule.gain,
+                        pitch_ratio=1.0,
+                        loop=rule.loop,
+                    ))
+
+                # If you also want overlay: emit OverlaySegments here in parallel.
+
+        return out
     def triggers_from_snapshots(self, snapshots: Iterable[Any]) -> List[Any]:  # List[SoundTrigger]
         out: List[Any] = []
         for snap in snapshots:
             trig = self.snapshot_to_trigger(snap)
             if trig is not None:
                 out.append(trig)
+        out.extend(self._song_triggers_from_snapshots(snapshots))
         return out
 
 

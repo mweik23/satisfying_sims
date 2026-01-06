@@ -37,6 +37,24 @@ class SoundTrigger:
     gain: float = 1.0
     pitch_ratio: float = 1.0
 
+#mirror in overlay segment class
+@dataclass
+class SoundSegmentTrigger:
+    """
+    Play a segment of a sample.
+
+    - Starts mixing at timeline time `t`.
+    - Reads audio from within the sample starting at `sample_offset`.
+    - Mixes for `duration` seconds.
+    - If loop=True and duration exceeds remaining sample length, wrap around.
+    """
+    t: float
+    sample_name: str
+    duration: float
+    sample_offset: float = 0.0
+    gain: float = 1.0
+    pitch_ratio: float = 1.0
+    loop: bool = False
 
 class AudioEngine:
     """
