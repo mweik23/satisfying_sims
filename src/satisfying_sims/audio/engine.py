@@ -54,7 +54,7 @@ class SoundSegmentTrigger:
     sample_offset: float = 0.0
     gain: float = 1.0
     pitch_ratio: float = 1.0
-    loop: bool = False
+    loop: bool = True
 
 class AudioEngine:
     """
@@ -93,20 +93,20 @@ class AudioEngine:
         self.n_channels = ref_channels
 
     # ------------------ public API ------------------ #
-
+    
     def mix(
-        self,
-        triggers: Iterable[SoundTrigger],
-        duration: float,
-        normalize: bool = True,
-        tail: float = 0.0,
+        self, 
+        triggers: Iterable[SoundTrigger | SoundSegmentTrigger], 
+        duration: float, 
+        normalize: bool=True, 
+        tail: float=0.0
     ) -> np.ndarray:
         """
         Mix all triggers into an audio buffer.
 
         Parameters
         ----------
-        triggers : iterable of SoundTrigger
+        triggers : iterable of SoundTrigger or SoundSegmentTrigger
         duration : float
             Base duration in seconds (e.g. length of recording).
         normalize : bool
@@ -123,9 +123,10 @@ class AudioEngine:
         if not triggers:
             n_samples = int(np.ceil(duration * self.sr))
             return np.zeros(n_samples, dtype=np.float32)
-
-        last_trigger_t = max(trig.t for trig in triggers)
-        total_duration = max(duration, last_trigger_t) + tail
+        last_t = max(trig.t + (trig.duration if isinstance(trig, SoundSegmentTrigger) else 0.0)
+                     for trig in triggers)
+        total_duration = max(duration, last_t) + tail
+        
         n_samples = int(np.ceil(total_duration * self.sr))
 
         if self.n_channels == 1:
@@ -136,28 +137,79 @@ class AudioEngine:
         for trig in triggers:
             sample = self.samples.get(trig.sample_name)
             if sample is None:
-                # silently ignore unknown sample names; or raise if you prefer
                 continue
-
-            data = sample.data.astype(np.float32, copy=True)
-            data = self._apply_pitch_and_gain(data, trig.pitch_ratio, trig.gain)
 
             start_idx = int(round(trig.t * self.sr))
             if start_idx >= n_samples:
                 continue
 
-            end_idx = min(start_idx + data.shape[0], n_samples)
-            data = data[: end_idx - start_idx]
-
-            # Mix in-place
-            audio[start_idx:end_idx] += data
+            if isinstance(trig, SoundTrigger):
+                data = sample.data.astype(np.float32, copy=True)
+                data = self._apply_pitch_and_gain(data, trig.pitch_ratio, trig.gain)
+                self._mix_at(audio, data, start_idx)
+            elif isinstance(trig, SoundSegmentTrigger):
+                seg = self._render_segment(sample, trig)  # <- new
+                self._mix_at(audio, seg, start_idx)
+            else:
+                raise ValueError(f"Unknown trigger type: {type(trig)}")
 
         if normalize:
             max_abs = np.max(np.abs(audio))
             if max_abs > 1.0e-8 and max_abs > 1.0:
                 audio /= max_abs
-
         return audio
+
+    def _render_segment(self, sample: AudioSample, trig: SoundSegmentTrigger) -> np.ndarray:
+        # 1) choose source samples by slicing/looping at original sr
+        n_out = int(round(trig.duration * self.sr))
+        if n_out <= 0:
+            return np.zeros((0, self.n_channels), np.float32) if self.n_channels > 1 else np.zeros(0, np.float32)
+
+        src = sample.data.astype(np.float32, copy=False)
+        src_len = src.shape[0]
+        start = int(round(trig.sample_offset * self.sr))
+
+        # build raw segment (before pitch)
+        raw = self._slice_with_loop(src, start, n_out, loop=trig.loop)
+
+        # 2) pitch/time-stretch (your existing method)
+        raw = self._apply_pitch_and_gain(raw, trig.pitch_ratio, trig.gain)
+        return raw
+
+    def _slice_with_loop(self, src: np.ndarray, start: int, n: int, loop: bool) -> np.ndarray:
+        # start may be > len; mod if looping
+        L = src.shape[0]
+        if L == 0 or n == 0:
+            return src[:0]
+
+        if loop:
+            start = start % L
+            out = []
+            remaining = n
+            idx = start
+            while remaining > 0:
+                take = min(remaining, L - idx)
+                out.append(src[idx:idx + take])
+                remaining -= take
+                idx = 0
+            return np.concatenate(out, axis=0)
+        else:
+            if start >= L:
+                # silence if offset beyond sample
+                shape = (n,) if self.n_channels == 1 else (n, self.n_channels)
+                return np.zeros(shape, dtype=np.float32)
+            end = min(L, start + n)
+            seg = src[start:end]
+            if end - start < n:
+                pad_shape = (n - (end - start),) if self.n_channels == 1 else (n - (end - start), self.n_channels)
+                seg = np.concatenate([seg, np.zeros(pad_shape, np.float32)], axis=0)
+            return seg
+
+    def _mix_at(self, audio: np.ndarray, data: np.ndarray, start_idx: int) -> None:
+        end_idx = min(start_idx + data.shape[0], audio.shape[0])
+        if end_idx <= start_idx:
+            return
+        audio[start_idx:end_idx] += data[: end_idx - start_idx]
 
     def write_wav(self, path: str, audio: np.ndarray) -> None:
         """Write a float32 audio buffer to WAV (PCM 16-bit)."""

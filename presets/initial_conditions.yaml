@@ -1,5 +1,5 @@
 init_groups:
-  sprite.grenade:
+  sprite.big_aj:
     count: 1
     pos_policy: exact
     vel_policy: exact
@@ -7,6 +7,6 @@ init_groups:
     - pos: 
         coords: [15, 70]
       vel:
-        coords: [25, 0]
-    size: 3
-    restitution: 0.952
+        coords: [26, 0]
+    size: 5
+    restitution: 0.93

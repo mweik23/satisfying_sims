@@ -44,7 +44,7 @@ def crop_to_alpha(img: np.ndarray, alpha_thresh: int = 1) -> np.ndarray:
     return img[y0:y1, x0:x1, :]
 
 
-def preprocess_sprite(path: str | Path, *, alpha_thresh: int = 1) -> np.ndarray:
+def preprocess_sprite(path: str | Path, *, alpha_thresh: int = 1, max_render_px: int | None = None, factor=1.5) -> np.ndarray:
     """
     Load and preprocess a sprite for rendering:
       - load RGBA
@@ -171,12 +171,30 @@ def grenade_geom(img: np.ndarray) -> SpriteGeom:
     cy_px = (bottom + top) / 2.0
     return SpriteGeom(cx_px=cx_px, cy_px=cy_px, r_px=r_px)
 
+def big_aj_geom(img: np.ndarray) -> SpriteGeom:
+    """
+    Disco ball assumption:
+      - ball is close to a circle
+    
+    if there is any oblate distrortion we average the width and height for radius
+    the center is at the center of the image
+    """
+    if img.ndim != 3 or img.shape[-1] != 4:
+        raise ValueError(f"Expected RGBA image (H, W, 4), got shape {img.shape}")
+
+    h, w = img.shape[:2]
+    r_px = (w+h) / 4.0
+    cx_px = w / 2.0
+    cy_px = h / 2.0
+    return SpriteGeom(cx_px=cx_px, cy_px=cy_px, r_px=r_px)
+
 GEOM_REGISTRY = {
     "ornament": ornament_geom,
     "discoball": discoball_geom,
     "firework_rocket": firework_rocket_geom,
     "fireball": fireball_geom,
     "grenade": grenade_geom,
+    "big_aj": big_aj_geom,
 }
 
 def sprite_extent_for_circle_center(

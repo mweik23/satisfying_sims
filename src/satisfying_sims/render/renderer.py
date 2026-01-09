@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 import importlib
 from satisfying_sims.themes import BodyTheme
-from satisfying_sims.utils.render_utils import fig_inches_from_pixels
+from satisfying_sims.utils.render_utils import fig_inches_from_pixels, get_pix_per_world
 from satisfying_sims.themes import THEME_REGISTRY
 from satisfying_sims.utils.render_utils import compute_axes_rect
 if TYPE_CHECKING:
@@ -41,9 +41,6 @@ class RendererConfig:
     fps: int = 30
     overlay_png: str | None = None
     overlay_size: tuple[float, float] = (12, 12)  # in WORLD units (width, height)
-    
-    
-
 
 class MatplotlibRenderer:
     def __init__(
@@ -59,6 +56,7 @@ class MatplotlibRenderer:
         self.body_themes: dict[str, BodyTheme] = {}
         self.background_geom = background_geom
         self.collision_effects = collision_effects
+        self.body_static = body_static
         
         self._overlay_img = None  # AxesImage
         self._overlay_w = None
@@ -111,9 +109,6 @@ class MatplotlibRenderer:
 
             self.body_themes[theme_id] = ThemeCls(config=theme_cfg)
 
-        for theme in self.body_themes.values():
-            theme.prepare_for_recording(body_static=body_static)
-
         # --- figure state ---
         self.fig = None
         self.ax = None
@@ -126,7 +121,7 @@ class MatplotlibRenderer:
         self.line_gap = 0.07
         self.default_caption = ""
         self.use_hud_text = False
-        
+        self.px_per_world = None
 
     def _init_figure(self, world: "World | None" = None):
         world_aspect = world.boundary.get_aspect_ratio() if world is not None else None
@@ -139,6 +134,7 @@ class MatplotlibRenderer:
             ),
             dpi=self.config.dpi,
         )
+        
         if self.collision_effects is not None:
             self.collision_effects.clear_cache()
 
@@ -209,7 +205,9 @@ class MatplotlibRenderer:
 
         # Draw OUTER boundary once (live if world provided, else replay via boundary_static)
         self._ensure_outer_boundary_drawn(ax=ax, world=world)
-
+        
+        for theme in self.body_themes.values():
+            theme.prepare_for_recording(body_static=self.body_static, px_per_world=get_pix_per_world(ax))
         self.fig, self.ax = fig, ax
 
 

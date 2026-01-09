@@ -7,6 +7,21 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 
+def get_pix_per_world(ax) -> float:
+    fig = ax.figure
+    fig_w_px, fig_h_px = fig.get_size_inches() * fig.dpi
+
+    bbox = ax.get_position()
+    ax_w_px = fig_w_px * bbox.width
+    ax_h_px = fig_h_px * bbox.height
+
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    world_w = abs(x1 - x0)
+    world_h = abs(y1 - y0)
+
+    return min(ax_w_px / world_w, ax_h_px / world_h)
+
 def fig_inches_from_pixels(width_px: int | None = None, 
                            height_px: int | None = None, 
                            dpi: int = 100, 

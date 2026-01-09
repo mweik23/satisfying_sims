@@ -19,8 +19,9 @@ def make_body_theme_cfgs(body_theme_registry, sprite_dir: Path | None = None) ->
         if theme_name == "sprite":
             sprite_paths = build_sprite_paths(sprite_dir, kind, keys=opts.pop("keys", None))
             cfgs[name] = SpriteThemeConfig(
-                sprite_paths=sprite_paths, 
-                sprite_type=kind, 
+                sprite_paths=sprite_paths,
+                sprite_type=kind,
+                theme_id=name, 
                 **opts
             )   
             

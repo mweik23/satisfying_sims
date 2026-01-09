@@ -142,12 +142,11 @@ class EventSoundMapper:
 
     def _select_rule(self, snap: Any) -> EventSoundRule | None:
         # rejection sampling gate (your existing behavior)
-        if not snap.ev.type == "CollisionEvent" or snap.ev.payload.get('same_type', True):
-            u = rng("audio").random()
-            event_types = list(self._rules_by_type.keys())
-            p_accept = float(self.keep_prob(snap, event_types))
-            if u > p_accept:
-                return None
+        u = rng("audio").random()
+        event_types = list(self._rules_by_type.keys())
+        p_accept = float(self.keep_prob(snap, event_types))
+        if u > p_accept:
+            return None
 
         candidates = [
             r for r in self._rules_by_type.get(snap.ev.type, [])
@@ -216,8 +215,8 @@ class EventSoundMapper:
                     ))
 
                 # If you also want overlay: emit OverlaySegments here in parallel.
-
         return out
+    
     def triggers_from_snapshots(self, snapshots: Iterable[Any]) -> List[Any]:  # List[SoundTrigger]
         out: List[Any] = []
         for snap in snapshots:
