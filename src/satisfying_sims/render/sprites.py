@@ -190,11 +190,12 @@ def big_aj_geom(img: np.ndarray) -> SpriteGeom:
 
 GEOM_REGISTRY = {
     "ornament": ornament_geom,
-    "discoball": discoball_geom,
+    "disco_ball": discoball_geom,
     "firework_rocket": firework_rocket_geom,
     "fireball": fireball_geom,
     "grenade": grenade_geom,
     "big_aj": big_aj_geom,
+    "dr_pepper_capsule": discoball_geom,  # same assumption as ornament
 }
 
 def sprite_extent_for_circle_center(

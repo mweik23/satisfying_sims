@@ -1,7 +1,10 @@
 collision_effects:
-  - event_type: CollisionEvent
-    asset: firework.npz
-    size_world: 40
-    cmap: hsv
-    event_filter:
-      same_type: false
+  one_shot:
+    - event_type: HitWallEvent
+      asset: firework.npz
+      size_world: 30
+      color_override: red
+      event_filter:
+        wall_idx: [0, 1]
+      white_only: true
+  

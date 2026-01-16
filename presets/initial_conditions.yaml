@@ -1,12 +1,12 @@
 init_groups:
-  sprite.big_aj:
+  sprite.dr_pepper_capsule:
     count: 1
     pos_policy: exact
     vel_policy: exact
     spawn_kwargs:
     - pos: 
-        coords: [15, 70]
+        coords: [10, 30.0]
       vel:
-        coords: [26, 0]
-    size: 5
-    restitution: 0.93
+        coords: [15, 0]
+    size: 2.5
+    restitution: 1

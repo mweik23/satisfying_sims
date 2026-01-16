@@ -9,6 +9,7 @@ import shutil
 from satisfying_sims.core import run_simulation, SimConfig, make_world, SimStopRestartPolicy, SimAction
 from satisfying_sims.render.collision_effects import build_collision_effect_router
 from satisfying_sims.render.video import render_video, render_video_with_audio
+from satisfying_sims.utils.beat_gated_utils import BeatGatedRule, make_beat_gated_rules
 from satisfying_sims.utils.random import seed_all
 from satisfying_sims.utils.cli import build_parser
 from satisfying_sims.render.renderer import MatplotlibRenderer, RendererConfig
@@ -126,15 +127,22 @@ def main():
     recording_path = exp_dir / "recording.pkl.xz"
     recording.save(recording_path)
     
-    rules = loaded.resolved.get('collision_effects', [])
+    sound_rules_cfg = loaded.resolved.get('sound_rules', {})
+    beat_gated_effects = {name: make_beat_gated_rules(rules, recording.iter_event_context()) for name, rules in sound_rules_cfg.pop('segment', {}).items()}
+    
+    one_shot_effects = loaded.resolved.get('collision_effects', [])
     collision_effects = build_collision_effect_router(
-        rules,
+        one_shot_effects,
+        beat_gated_effects,
         asset_dir=collision_effects_dir,
+        fps=args.frame_rate
     )
+
     renderer = MatplotlibRenderer(render_config, 
                                   body_static=recording.body_static, 
                                   background_geom=background_geom,
-                                  collision_effects=collision_effects)
+                                  collision_effects=collision_effects,
+                                  boundary_static=recording.boundary_static)
     # 4. Render video, optionally with audio
     if args.audio_samples_dir is None:
         # Silent video only
@@ -159,7 +167,8 @@ def main():
             audio_tail=args.audio_tail,
             world_for_boundary=world,
             sample_map=args.sample_map,
-            rules_cfg=loaded.resolved.get('sound_rules', None),
+            sound_rules_cfg=sound_rules_cfg,
+            beat_gated_rules=beat_gated_effects,
             renderer=renderer,
             reject_cfg=reject_cfg,
         )

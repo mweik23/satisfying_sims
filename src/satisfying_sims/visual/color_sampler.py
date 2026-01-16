@@ -53,6 +53,7 @@ class ColorSampler:
 
     cmap: str | mpl.colors.Colormap = "viridis"
     strategy: Strategy = "avoid_extremes"
+    color_override: str | None = None  # if set, ignore everything else and use this color (e.g. "#ff0000" or "red")
 
     # Range in colormap parameter space
     vmin: float = 0.05
@@ -89,8 +90,15 @@ class ColorSampler:
 
     def sample(self) -> tuple[float, float, float, float]:
         """Random sample using the provided RNG."""
-        u = self._sample_u()
-        return self.color_at(u)
+        if self.color_override is None:
+            u = self._sample_u()
+            return self.color_at(u)
+        else:
+            # Use color_override directly, ignoring strategy and colormap
+            rgba = mpl.colors.to_rgba(self.color_override)
+            a = float(self.alpha)
+            a = 0.0 if a < 0.0 else (1.0 if a > 1.0 else a)
+            return (float(rgba[0]), float(rgba[1]), float(rgba[2]), a)
 
     def sample_many(
         self, n: int

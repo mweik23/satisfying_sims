@@ -13,6 +13,7 @@ from satisfying_sims.themes import BodyTheme
 from satisfying_sims.utils.render_utils import fig_inches_from_pixels, get_pix_per_world
 from satisfying_sims.themes import THEME_REGISTRY
 from satisfying_sims.utils.render_utils import compute_axes_rect
+from .artists import build_wall_artist
 if TYPE_CHECKING:
     from satisfying_sims.core.recording import FrameSnapshot, BodyStaticSnapshot, BodyStateSnapshot, BoundaryStaticSnapshot
     from satisfying_sims.core.world import World
@@ -53,6 +54,8 @@ class MatplotlibRenderer:
         boundary_static: "BoundaryStaticSnapshot | None" = None,
     ):
         self.config = config or RendererConfig()
+        self.boundary_color = self.config.boundary_color if self.config.boundary_color is not None else "none"
+        self.boundary_lw = self.config.boundary_lw if hasattr(self.config, "boundary_lw") and self.config.boundary_lw is not None else 1.0
         self.body_themes: dict[str, BodyTheme] = {}
         self.background_geom = background_geom
         self.collision_effects = collision_effects
@@ -68,7 +71,7 @@ class MatplotlibRenderer:
         # --- boundary rendering cache / replay support ---
         self._boundary_drawn = False
         self._inner_wall_lines: list[Any] = []       # matplotlib Line2D artists (inner walls)
-        self._inner_wall_closed: list[bool] = []     # closed flags for inner walls
+        self._inner_wall_closed: dict[int, bool] = {}     # closed flags for inner walls
         self._boundary_static = boundary_static      # BoundaryStaticSnapshot saved on recording
         self._outer_boundary_obj = None              # reconstructed outer boundary for replay (lazy)
 
@@ -76,7 +79,7 @@ class MatplotlibRenderer:
         if boundary_static is not None:
             inner_walls = getattr(boundary_static, "inner_walls", None)
             if inner_walls is not None:
-                self._inner_wall_closed = [bool(w.closed) for w in inner_walls]
+                self._inner_wall_closed = {wid: bool(w.closed) for wid, w in inner_walls.items()}
 
         # --- theme setup ---
         if body_static is None:
@@ -137,7 +140,18 @@ class MatplotlibRenderer:
         
         if self.collision_effects is not None:
             self.collision_effects.clear_cache()
+            self.collision_effects.plot_default(ax)
 
+        self._wall_artists = {
+            wid: build_wall_artist(
+                ax, 
+                wall_static, 
+                default_style={
+                    "color": self.boundary_color, 
+                    "linewidth": self.boundary_lw
+                }
+            ) for wid, wall_static in self._boundary_static.inner_walls.items()
+        }
         if self.config.background_png is not None:
             img = Image.open(f"{self.config.background_png}/raw.png").convert("RGBA")
             arr = np.asarray(img)
@@ -260,6 +274,7 @@ class MatplotlibRenderer:
 
         if self.collision_effects is not None:
             self.collision_effects.begin_frame(frame_idx)
+            self.collision_effects.check_windows(frame_idx)
             self.collision_effects.ingest_events(snapshot.events, snapshot, body_static)
             self.collision_effects.draw(ax, frame_idx)
             self.collision_effects.end_frame()
@@ -294,12 +309,15 @@ class MatplotlibRenderer:
         if self._boundary_drawn:
             return
         plot_fn = getattr(boundary, "plot", None)
+        edgecolor = getattr(boundary, "color", None)
+        if edgecolor is None:
+            edgecolor = self.boundary_color if self.boundary_color is not None else "none"
         if callable(plot_fn):
             plot_fn(
                 ax=ax,
                 facecolor=self.config.world_color if self.config.world_color is not None else "none",
-                edgecolor=self.config.boundary_color if self.config.boundary_color is not None else "none",
-                linewidth=2,
+                edgecolor=edgecolor,
+                linewidth=1,
             )
         self._boundary_drawn = True
 
@@ -309,45 +327,10 @@ class MatplotlibRenderer:
 
         Expected:
         snapshot.boundary is BoundaryStateSnapshot with:
-            - wall_points: list[list[(x,y)]]
+            - inner_wall_snapshots: list[WallStateSnapshot] (per-frame state)
         """
-        bstate = getattr(snapshot, "boundary", None)
-        if bstate is None:
-            return
-
-        wall_points = getattr(bstate, "wall_points", None)
-        if wall_points is None:
-            return
-
-        # Ensure we have enough Line2D artists
-        while len(self._inner_wall_lines) < len(wall_points):
-            (line,) = ax.plot(
-                [],
-                [],
-                linewidth=2,
-                color=self.config.boundary_color if self.config.boundary_color is not None else "gray",
-                zorder=1,
-            )
-            self._inner_wall_lines.append(line)
-
-        # Update each wall line
-        for i, pts in enumerate(wall_points):
-            line = self._inner_wall_lines[i]
-
-            if not pts:
-                line.set_data([], [])
-                continue
-
-            xy = np.asarray(pts, dtype=float)  # (N,2)
-
-            closed = False
-            if i < len(self._inner_wall_closed):
-                closed = bool(self._inner_wall_closed[i])
-
-            if closed and len(xy) >= 2:
-                xy = np.vstack([xy, xy[0]])
-
-            line.set_data(xy[:, 0], xy[:, 1])
+        for state in snapshot.boundary.inner_wall_snapshots:
+            self._wall_artists[state.id].update(state)
 
 
     def _build_outer_boundary_from_static(self) -> Any | None:
@@ -360,7 +343,8 @@ class MatplotlibRenderer:
             return None
 
         outer_kind = getattr(bs, "outer_kind", None)
-        outer_attrs = getattr(bs, "outer_attrs", None) or {}
+        outer_attrs = dict(getattr(bs, "outer_attrs", None) or {})
+        outer_attrs.pop("style", None)
         if outer_kind is None:
             return None
 

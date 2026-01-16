@@ -36,6 +36,7 @@ class World:
     
     def __post_init__(self):
         self.body_counter = {}
+        print(f'rules: {self.rules}')
     
     @property
     def n_bodies(self) -> int:

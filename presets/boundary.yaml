@@ -1,14 +1,18 @@
 outer_boundary:
-  type: BoxBoundary
+  type: EllipseBoundary
   params:
-    width: 100
-    height: 100
-  
+    a: 50
+    b: 50
+    priority: 1.0
 inner_walls:
-  - type: PolylineWall
+  - type: CircularArcWall
     params:
-      points:
-        - [60, 0]
-        - [60, 20]
-        - [80, 20]
-
+      center: [0, 0]
+      radius: 50
+      angle_start: 5
+      delta_angle: 1
+      priority: 1.5
+      color: red
+      linewidth: 1.0
+      animate:
+        angle_start_velocity: 0.3

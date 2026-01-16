@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from typing import Literal
 import numpy as np
 from abc import ABC
+from collections.abc import Container
+
+from satisfying_sims.core.recording import EventContext, EventSnapshot
 
 
 from .appearances import BodyKind
@@ -48,6 +51,7 @@ class HitWallEvent(BaseEvent):
     body_theme_id : str
     norm_vec: np.ndarray    # (2,) unit vector pointing into the world from wall
     impulse: float
+    wall_idx: int | None = None
     
     def __post_init__(self):
         self.a_id = self.body_id
@@ -57,6 +61,7 @@ class HitWallEvent(BaseEvent):
             "norm_vec": self.norm_vec.tolist(),
             "impulse": self.impulse,
             "body_theme_id": self.body_theme_id,
+            "wall_idx": self.wall_idx,
         }
 
 @dataclass
@@ -89,3 +94,22 @@ class DestroyEvent(BaseEvent):
             "reason": self.reason
         })
         return payload
+
+def matches_filter(event: EventSnapshot, event_filter: dict) -> bool:
+    for k, expected in event_filter.items():
+        actual = getattr(event, k, None)
+        if actual is None:
+            #check payload too
+            if hasattr(event, 'payload'):
+                actual = event.payload.get(k, None)
+            else:
+                actual = None
+            if actual is None:
+                print('WARNING: key not found in event or payload: ', k, ' for event: ', event)
+                
+        if isinstance(expected, Container) and not isinstance(expected, (str, bytes)):
+            if actual not in expected:
+                return False
+        elif actual != expected:
+            return False
+    return True

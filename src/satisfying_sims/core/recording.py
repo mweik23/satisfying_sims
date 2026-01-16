@@ -9,6 +9,7 @@ import pickle
 import lzma
 import numpy as np
 from typing import Dict, Tuple
+from satisfying_sims.utils.find_unpicklable import find_first_unpicklable, find_mappingproxy
 if TYPE_CHECKING:
     from .world import World
     from .events import Event
@@ -76,17 +77,24 @@ class EventContext:
 
 # --- Boundary recording snapshots ---
 
+#WallStatic will be stored in a dict with id as the key for easy reference in frames
 @dataclass
 class WallStaticSnapshot:
     """Static wall metadata (no points)."""
-    id: str
     kind: str                 # e.g. "PolylineWall"
     closed: bool
+    style: dict[str, Any]  # e.g. color, linewidth
     one_sided: bool
     normal_sign: float
     constrains_domain: bool
+    transform_artist: bool
+    init_state: dict[str, Any] = field(default_factory=dict)  # e.g. radius for circular arc
     tags: dict[str, Any] = field(default_factory=dict)
 
+@dataclass
+class WallStateSnapshot:
+    id: int
+    wall_attrs: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class BoundaryStaticSnapshot:
@@ -97,8 +105,7 @@ class BoundaryStaticSnapshot:
     """
     outer_kind: str
     outer_attrs: dict[str, Any]
-    inner_walls: list[WallStaticSnapshot] = field(default_factory=list)
-
+    inner_walls: dict[int, WallStaticSnapshot] = field(default_factory=dict)
 
 @dataclass
 class BoundaryStateSnapshot:
@@ -106,7 +113,8 @@ class BoundaryStateSnapshot:
     Per-frame time-dependent boundary state.
     Records only the wall points for inner walls, in the same order as BoundaryStaticSnapshot.inner_walls.
     """
-    wall_points: list[list[tuple[float, float]]]  # [wall_index][vertex_index](x,y)
+    outer_attrs: dict[str, Any] | None = None  # optional if outer is fully static
+    inner_wall_snapshots: list[WallStateSnapshot] = field(default_factory=list)
 
 def make_boundary_static_snapshot(boundary: Any) -> BoundaryStaticSnapshot:
     """
@@ -118,33 +126,44 @@ def make_boundary_static_snapshot(boundary: Any) -> BoundaryStaticSnapshot:
 
     outer_kind = type(outer).__name__
     if outer_kind == "BoxBoundary":
-        outer_attrs = {"width": float(outer.width), "height": float(outer.height)}
+        style = {
+            "color": getattr(outer, "color", "none"),
+            "linewidth": getattr(outer, "linewidth", 1.0),
+            'zorder': getattr(outer, "priority", 1.0)
+        }
+        outer_attrs = {
+            "width": float(outer.width), 
+            "height": float(outer.height),
+            'style': style
+        }
+        
     elif outer_kind == "EllipseBoundary":
-        outer_attrs = {"a": float(outer.a), "b": float(outer.b)}
+        style = {
+            "color": getattr(outer, "color", "none"),
+            "linewidth": getattr(outer, "linewidth", 1.0),
+            'zorder': getattr(outer, "priority", 1.0)
+        }
+        outer_attrs = {"a": float(outer.a), "b": float(outer.b), 'style': style}
     else:
-        # fallback: try a method if you add one later
-        if hasattr(outer, "to_state"):
-            outer_attrs = dict(outer.to_state())
-        else:
-            raise TypeError(f"Unsupported outer boundary type: {outer_kind}")
+        raise TypeError(f"Unsupported outer boundary type: {outer_kind}")
 
-    inner_walls = []
-    for i, w in enumerate(getattr(boundary, "walls", [])):
-        wid = getattr(w, "id", None)
-        if wid is None:
-            wid = f"inner_wall_{i}"
-
-        inner_walls.append(
-            WallStaticSnapshot(
-                id=str(wid),
-                kind=type(w).__name__,
-                closed=bool(getattr(w, "closed", False)),
-                one_sided=bool(getattr(w, "one_sided", False)),
-                normal_sign=float(getattr(w, "normal_sign", 1.0)),
-                constrains_domain=bool(getattr(w, "constrains_domain", False)),
-                tags=dict(getattr(w, "tags", {})) if getattr(w, "tags", None) is not None else {},
-            )
-        )
+    inner_walls = {
+        wid: WallStaticSnapshot(
+            kind=type(w).__name__,
+            closed=bool(getattr(w, "closed", False)),
+            style={
+                "color": getattr(w, "color", "none"),
+                "linewidth": getattr(w, "linewidth", 1.0),
+                'zorder': getattr(w, "priority", 1.0)
+            },
+            one_sided=bool(getattr(w, "one_sided", False)),
+            normal_sign=float(getattr(w, "normal_sign", 1.0)),
+            constrains_domain=bool(getattr(w, "constrains_domain", False)),
+            transform_artist=bool(getattr(w, "similarity_invariant", False)),
+            init_state=w.get_state() if hasattr(w, "get_state") else {},
+            tags=dict(getattr(w, "tags", {})) if getattr(w, "tags", None) is not None else {},
+        ) for wid, w in enumerate(getattr(boundary, "walls", []))
+    }
 
     return BoundaryStaticSnapshot(
         outer_kind=outer_kind,
@@ -158,15 +177,18 @@ def make_boundary_state_snapshot(boundary: Any) -> BoundaryStateSnapshot:
     Create the per-frame boundary snapshot (time dependent part only).
     Records w.points for each inner wall in boundary.walls order.
     """
-    wall_points: list[list[tuple[float, float]]] = []
+    if hasattr(boundary.outer, "animate"):
+        if boundary.outer.animate is not None:
+            raise NotImplementedError("Animated outer boundaries not supported yet")
+        
+    inner_wall_snapshots = [
+        WallStateSnapshot(
+            id=wid, 
+            wall_attrs=w.get_state() if hasattr(w, "get_state") else {}
+        ) for wid, w in enumerate(getattr(boundary, "walls", []))
+    ]
 
-    for w in getattr(boundary, "walls", []):
-        pts = np.asarray(getattr(w, "points"), dtype=float)
-        if pts.ndim != 2 or pts.shape[1] != 2:
-            raise ValueError(f"Wall points must be (N,2); got {pts.shape} for {type(w).__name__}")
-        wall_points.append([(float(x), float(y)) for x, y in pts])
-
-    return BoundaryStateSnapshot(wall_points=wall_points)
+    return BoundaryStateSnapshot(inner_wall_snapshots=inner_wall_snapshots)
 
 
 @dataclass

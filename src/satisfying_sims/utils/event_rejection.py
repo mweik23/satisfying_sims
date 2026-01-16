@@ -15,6 +15,7 @@ class RejectConfig:
     gamma: float = 1.0 #overall power of lam after break
     p_min: float = 0.0
     p_max: float = 1.0
+    adaptive_audio_setting: str | None = None
     
     @classmethod
     def from_args(cls, args) -> "RejectConfig":

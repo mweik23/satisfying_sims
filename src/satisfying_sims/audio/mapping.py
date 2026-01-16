@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, List, Mapping, Sequence, Any
+from typing import Callable, Iterable, List, Mapping, Sequence, Any, Tuple, Optional
 
 import numpy as np
 from functools import partial
+from collections.abc import Container
 
 from satisfying_sims.utils.random import rng
 from satisfying_sims.utils.reflection import get_path
+from satisfying_sims.utils.beat_gated_utils import compute_windows
+from satisfying_sims.core.events import matches_filter
 from satisfying_sims.core.recording import EventSnapshot, EventContext
+from satisfying_sims.utils.beat_gated_utils import BeatGatedRule
 from .engine import SoundTrigger, SoundSegmentTrigger
 
 # Functions map EventSnapshot -> float
@@ -39,69 +43,6 @@ class EventSoundRule:
         # simple measure: more filter keys => more specific
         return len(self.event_filter)
     
-from dataclasses import dataclass
-import math
-from typing import Sequence
-
-@dataclass(frozen=True)
-class BeatGateConfig:
-    bpm: float
-    # optional: allow small timing slack, e.g. 0.02s
-    grace: float = 0.0
-
-def compute_beat_gated_windows(event_times: Sequence[float], cfg: BeatGateConfig):
-    if not event_times:
-        return []
-
-    P = 60.0 / cfg.bpm
-    ts = sorted(event_times)
-
-    windows = []
-    i = 0
-    n = len(ts)
-
-    while i < n:
-        t0 = ts[i]
-        k = 0
-        # we require at least one event in each interval [t0+kP, t0+(k+1)P + grace)
-        while True:
-            interval_start = t0 + k * P
-            interval_end   = t0 + (k + 1) * P + cfg.grace
-
-            # advance i to first event >= interval_start (should already be)
-            while i < n and ts[i] < interval_start:
-                i += 1
-
-            # if there is an event before the next beat boundary, keep going
-            if i < n and ts[i] < interval_end:
-                # consume all events in this interval (not strictly required, but keeps i moving)
-                while i < n and ts[i] < interval_end:
-                    i += 1
-                k += 1
-                continue
-
-            # missed the beat: stop exactly at the beat boundary (without grace)
-            t_end = t0 + (k + 1) * P
-            windows.append((t0, t_end))
-            break
-
-    return windows
-
-@dataclass(frozen=True)
-class BeatGatedSongRule:
-    enabled: bool
-
-    event_type: str
-    event_filter: dict[str, object]
-
-    bpm: float
-    song_sample_name: str
-    gain: float = 1.0
-    grace: float = 0.0
-    loop: bool = True
-
-    overlay_asset: str | None = None
-
 class EventSoundMapper:
     """
     Maps EventContext snapshots to SoundTrigger objects using a list of rules.
@@ -109,44 +50,36 @@ class EventSoundMapper:
 
     def __init__(
         self,
-        rules: Mapping[str, EventSoundRule],
-        beat_song_rules: Mapping[str, BeatGatedSongRule] | None = None,
-        keep_prob: Callable[[Any, Sequence[EventSoundRule]], float] | None = None,
+        one_shot_rules: Mapping[str, EventSoundRule],
+        beat_song_rules: Mapping[str, BeatGatedRule] | None = None,
+        reduction_fn: Callable[[Any, Sequence[EventSoundRule]], float] | None = None,
+        adaptive_audio_setting: Optional[str] = None,
     ):
-        self.rules = list(rules.values() if rules else [])
+        self.one_shot_rules = list(one_shot_rules.values() if one_shot_rules else [])
         self.beat_song_rules = list(beat_song_rules.values() if beat_song_rules else [])
-        self.keep_prob = keep_prob or (lambda snap, rules: 1.0)
-
+        self.reduction_fn = reduction_fn or (lambda snap, one_shot_rules: 1.0)
+        self.adaptive_audio_setting = adaptive_audio_setting
         # Optional: pre-group by event_type for speed
         self._rules_by_type: dict[str, list[EventSoundRule]] = {}
-        for r in self.rules:
+        for r in self.one_shot_rules:
             self._rules_by_type.setdefault(r.event_type, []).append(r)
 
-        self._beat_rules_by_type: dict[str, list[BeatGatedSongRule]] = {}
+        self._beat_rules_by_type: dict[str, list[BeatGatedRule]] = {}
         for r in self.beat_song_rules:
             self._beat_rules_by_type.setdefault(r.event_type, []).append(r)
             
-    def _matches_filter(self, snap: Any, rule: EventSoundRule) -> bool:
+    def _matches_filter(self, snap: Any, rule: EventSoundRule | BeatGatedRule) -> bool:
         # `snap` is EventContext; event object is snap.ev
-        ev = snap.ev
-        for k, expected in rule.event_filter.items():
-            actual = getattr(ev, k, None)
-            if actual is None:
-                #check payload too
-                actual = ev.payload.get(k, None)
-                if actual is None:
-                    print('WARNING: key not found in event or payload: ', k)
-            if actual != expected:
-                return False
-        return True
+        return matches_filter(snap.ev, rule.event_filter)
 
     def _select_rule(self, snap: Any) -> EventSoundRule | None:
         # rejection sampling gate (your existing behavior)
-        u = rng("audio").random()
-        event_types = list(self._rules_by_type.keys())
-        p_accept = float(self.keep_prob(snap, event_types))
-        if u > p_accept:
-            return None
+        if self.adaptive_audio_setting=='reject' and self.reduction_fn is not None:
+            u = rng("audio").random()
+            event_types = list(self._rules_by_type.keys())
+            p_accept = float(self.reduction_fn(snap, event_types))
+            if u > p_accept:
+                return None
 
         candidates = [
             r for r in self._rules_by_type.get(snap.ev.type, [])
@@ -173,10 +106,12 @@ class EventSoundMapper:
         rule = self._select_rule(snap)
         if rule is None:
             return None
-
         gain = float(rule.gain_fn(snap))
         pitch_ratio = float(rule.pitch_fn(snap))
-
+        if self.adaptive_audio_setting=='attenuate' and self.reduction_fn is not None:
+            gain_multiplier = float(self.reduction_fn(snap, list(self._rules_by_type.keys())))
+            gain *= gain_multiplier
+            
         return SoundTrigger(
             t=float(snap.ev.t),
             sample_name=rule.sample_name,
@@ -189,29 +124,20 @@ class EventSoundMapper:
 
         # For each beat rule, collect matching event times and compute windows
         for event_type, rules in self._beat_rules_by_type.items():
-            # prefilter snaps by type once
-            type_snaps = [s for s in snaps if s.ev.type == event_type]
 
             for rule in rules:
                 if not rule.enabled:
                     continue
-
-                times = [
-                    float(s.ev.t)
-                    for s in type_snaps
-                    if self._matches_filter(s, rule)  # works because rule has event_filter
-                ]
-                windows = compute_beat_gated_windows(times, BeatGateConfig(bpm=rule.bpm, grace=rule.grace))
-
-                for t0, t1 in windows:
+                
+                for t0, t1 in rule.windows:
                     out.append(SoundSegmentTrigger(
                         t=t0,
-                        sample_name=rule.song_sample_name,
+                        sample_name=rule.sample_name,
                         duration=(t1 - t0),
                         sample_offset=0.0,     # restart each time
-                        gain=rule.gain,
+                        gain=rule.config.gain,
                         pitch_ratio=1.0,
-                        loop=rule.loop,
+                        loop=rule.config.loop,
                     ))
 
                 # If you also want overlay: emit OverlaySegments here in parallel.
@@ -324,24 +250,27 @@ def rules_from_config(
     default_gain_fn: GainFn,
     default_pitch_fn: PitchFn,
 ) -> list[EventSoundRule]:
-    rules: dict[str, EventSoundRule] = {}
-    for key, item in cfg.items():
-        event_type = item["event_type"]
-        sample_name = item["asset"]
-        event_filter = item.get("event_filter", {}) or {}
-        priority = int(item.get("priority", 0))
-        enabled = bool(item.get("enabled", True))
+    rules = {'one_shot': {}, 'segment': {}}
+    for rule_type, rules_cfg in cfg.items():
+        for key, item in rules_cfg.items():
+            event_type = item["event_type"]
+            sample_name = item["sample_name"]
+            event_filter = item.get("event_filter", {}) or {}
+            enabled = bool(item.get("enabled", True))
+            if rule_type == 'one_shot':
+                priority = int(item.get("priority", 0))
+                gain_fn = build_fn(item.get("gain"), registry=GAIN_FNS, default=default_gain_fn)
+                pitch_fn = build_fn(item.get("pitch"), registry=PITCH_FNS, default=default_pitch_fn)
 
-        gain_fn = build_fn(item.get("gain"), registry=GAIN_FNS, default=default_gain_fn)
-        pitch_fn = build_fn(item.get("pitch"), registry=PITCH_FNS, default=default_pitch_fn)
-
-        rules[key] = EventSoundRule(
-            event_type=event_type,
-            sample_name=sample_name,
-            gain_fn=gain_fn,
-            pitch_fn=pitch_fn,
-            event_filter=event_filter,
-            priority=priority,
-            enabled=enabled,
-        )
+                rules[rule_type][key] = EventSoundRule(
+                    event_type=event_type,
+                    sample_name=sample_name,
+                    gain_fn=gain_fn,
+                    pitch_fn=pitch_fn,
+                    event_filter=event_filter,
+                    priority=priority,
+                    enabled=enabled,
+                )
+            else:
+                raise ValueError(f"Unknown rule type {rule_type!r}. Expected 'one_shot' or 'segment'.")
     return rules

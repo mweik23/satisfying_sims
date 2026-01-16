@@ -9,10 +9,14 @@ import imageio.v3 as iio
 from collections import Counter
 
 from pathlib import Path
+from collections import deque
 
 import matplotlib.transforms as mtransforms
 from matplotlib.axes import Axes
+from satisfying_sims.core.events import matches_filter
 from satisfying_sims.visual.color_sampler import ColorSampler
+from satisfying_sims.utils.beat_gated_utils import BeatGatedConfig
+from satisfying_sims.utils.random import rng
 
 # --------- helpers: video decode + chroma key (green screen) ----------
 
@@ -172,15 +176,18 @@ class CollisionEffectConfig:
     zorder: int = 50
     interpolation: str = "bilinear"
     origin: str = "upper"
-    white_only: bool = True
+    white_only: bool = False
     white_mode: str = "alpha"
     event_type: str | None = None
     event_filter: Dict[str, Any] | None = None # e.g. {"same_type": False}
-
+    effect_type: str = "one_shot"
+    enabled: bool = True
+    beat_gated_config: BeatGatedConfig | None = None
+    default_frame: int | None = None  # if set, use this frame index instead of animating through the stack
     # size in world units: set one of these
-    size_world: float = 0.3          # width of effect in world units (default)
+    size_world: float = 20          # width of effect in world units (default)
     size_scale_with_radius: float = 0.0  # if >0, use size = this * R
-
+    position_override: Optional[list[float, float]] = None  # if set, ignore event position and use this instead
     # when spawning multiple effects same frame, jitter a bit to avoid perfect overlap
     jitter_world: float = 0.0
 
@@ -200,6 +207,9 @@ class _EffectInstance:
     size_world: float
     artist_id: int             # index into pooled artists
     tint_key: tuple[int,int,int,int] | None = None
+    final_frame: float | None = None  #can end up being in between frames
+    loop: bool = False
+    grace: float = 0.0
 
 
 class CollisionEffectTheme:
@@ -228,12 +238,12 @@ class CollisionEffectTheme:
             white_mode=config.white_mode,
         )
         self.num_effect_frames = len(self.frames_rgba)
-
+        self.windows = deque()  
         # pooled artists for speed (AxesImage)
         self._artists: List[Any] = []
         self._xforms: List[mtransforms.Affine2D] = []
         self._artist_visible: List[bool] = []
-
+        self.default_artist = None
         # active instances
         self._active: List[_EffectInstance] = []
         self._frame_idx: int = 0
@@ -253,7 +263,25 @@ class CollisionEffectTheme:
 
     def prepare_for_recording(self, body_static=None) -> None:
         pass
+    
+    def plot_default(self, ax: Axes) -> None:
+        if self.config.default_frame is not None:
+            frame_idx = self.config.default_frame
+            rgba = self.frames_rgba[frame_idx]
+            x, y = self.config.position_override
+            h, w, _ = rgba.shape
+            s = self.config.size_world
+            aspect = h / w if w > 0 else 1.0
+            extent = (x - s / 2, x + s / 2, y - s * aspect / 2, y + s * aspect / 2)
 
+            if self.default_artist is None or getattr(self.default_artist, "axes", None) is None:
+                self.default_artist = ax.imshow(
+                    rgba,
+                    extent=extent,
+                    origin=self.config.origin,
+                    interpolation=self.config.interpolation,
+                    zorder=self.config.zorder,
+                )
     def begin_frame(self, frame_idx: int) -> None:
         self._frame_idx = frame_idx
         for i, a in enumerate(self._artists):
@@ -311,6 +339,7 @@ class CollisionEffectTheme:
             stack = self._build_tinted_stack(key)
             self._tinted_cache[key] = stack
         return stack
+    
 
     # --------- spawn logic ---------
 
@@ -335,17 +364,9 @@ class CollisionEffectTheme:
         for e in event_snaps:
             if allowed is not None and e.type != allowed:
                 continue
-            filter_mismatch = False
-            for k, v in (self.config.event_filter or {}).items():
-                if e.payload.get(k, None) != v:
-                    filter_mismatch = True
-                    break
-            
-            if filter_mismatch:
+            if not matches_filter(e, self.config.event_filter or {}):
                 continue
-            
             et = e.type
-
             if et == "CollisionEvent":
                 pos = e.payload.get("pos", None)
                 if pos is None:
@@ -386,9 +407,14 @@ class CollisionEffectTheme:
                 cx, cy = float(state.pos[0]), float(state.pos[1])
                 # contact point on body surface toward the wall (opposite inward normal)
                 x, y = cx - n[0] * R, cy - n[1] * R
-                self._spawn_at(x, y, R=R, body_static=body_static, rng=rng)
+                self._spawn_at(x, y, R=R)
 
-            # else: ignore other event types
+    def check_windows(self, frame_idx : int) -> None:
+        if len(self.windows) > 0:
+            if frame_idx >= self.windows[0][0]:
+                self.default_artist.set_visible(False)
+                current_window = self.windows.popleft()
+                self._spawn_at(*self.config.position_override, window=current_window)
 
     def _spawn_at(
         self,
@@ -396,8 +422,7 @@ class CollisionEffectTheme:
         y: float,
         *,
         R: float | None = None,
-        body_static: Dict[int, Any] | None = None,
-        rng: Optional[np.random.Generator],
+        window: Tuple[float, float] | None = None,
     ) -> None:
         # size selection
         size = self.config.size_world
@@ -405,10 +430,10 @@ class CollisionEffectTheme:
             if R > 0:
                 size = self.config.size_scale_with_radius * R
 
-        if rng is not None and self.config.jitter_world > 0:
+        if self.config.jitter_world > 0:
             j = self.config.jitter_world
-            x += float(rng.uniform(-j, j))
-            y += float(rng.uniform(-j, j))
+            x += float(rng("color").uniform(-j, j))
+            y += float(rng("color").uniform(-j, j))
         
         tint_key = None
         if self.config.color_sampler is not None:
@@ -417,6 +442,13 @@ class CollisionEffectTheme:
             # (optional) clamp cache growth: quantization already helps
 
         artist_id = self._alloc_artist()
+        segment_kwargs = {}
+        if self.config.effect_type == "segment":
+            segment_kwargs = {
+                "final_frame": window[1],
+                "loop": self.config.beat_gated_config.loop if self.config.beat_gated_config else False,
+                "grace": self.config.beat_gated_config.grace if self.config.beat_gated_config else 0.0,
+            }
         self._active.append(
             _EffectInstance(
                 start_frame=self._frame_idx,
@@ -424,6 +456,7 @@ class CollisionEffectTheme:
                 size_world=size,
                 artist_id=artist_id,
                 tint_key=tint_key,
+                **segment_kwargs,
             )
         )
 
@@ -451,17 +484,29 @@ class CollisionEffectTheme:
 
         for inst in self._active:
             local = frame_idx - inst.start_frame
+            if inst.loop:
+                local = local % self.num_effect_frames
             if local < 0 or local >= self.num_effect_frames:
-                self._free_artist_ids.append(inst.artist_id)  # <-- NEW
+                self._free_artist_ids.append(inst.artist_id)
+                if self.default_artist is not None:
+                    self.default_artist.set_visible(True)
                 continue
+            if inst.final_frame is not None:
+                if frame_idx > inst.final_frame:
+                    self._free_artist_ids.append(inst.artist_id)
+                    if self.default_artist is not None:
+                        self.default_artist.set_visible(True)
+                    continue
             if inst.tint_key is None:
                 rgba = self.frames_rgba[local]
                 
             else:
                 rgba = self._get_stack_for_key(inst.tint_key)[local]
             x, y = inst.pos
+            h, w, _ = rgba.shape
             s = inst.size_world
-            extent = (x - s / 2, x + s / 2, y - s / 2, y + s / 2)
+            aspect = h / w if w > 0 else 1.0
+            extent = (x - s / 2, x + s / 2, y - s * aspect / 2, y + s * aspect / 2)
 
             i = inst.artist_id
             artist = self._artists[i]

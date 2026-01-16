@@ -141,6 +141,12 @@ def build_parser():
         help="Rejection rate growth parameter.",
     )
     parser.add_argument(
+        "--adaptive_audio_setting",
+        type=str,
+        default=None,
+        help="Name of adaptive audio setting to apply based on event rates (e.g. reject, attenuate, etc.)"
+    )
+    parser.add_argument(
         "--caption_text",
         type=str,
         default="",

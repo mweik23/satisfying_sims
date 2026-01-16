@@ -20,6 +20,7 @@ from satisfying_sims.audio.mapping import (
     pitch_from_impulse,
     rules_from_config,
 )
+from satisfying_sims.utils.beat_gated_utils import BeatGatedRule
 from satisfying_sims.utils.event_rejection import RejectConfig, make_keep_prob
 
 # ---------- Core: snapshots -> audio buffer ---------- #
@@ -109,6 +110,7 @@ def build_and_save_soundtrack(
     tail: float = 0.3,
     rules: Optional[Sequence[EventSoundRule]] = None,
     rules_cfg: dict[str, dict] | None = None,   # your JSON-like list input
+    beat_gated_rules: dict[str, BeatGatedRule] | None = None,
     sample_map: dict[str, str] | None = None,  # keep if you still want simple overrides for defaults
     reject_cfg: Optional[RejectConfig] = None,
 ) -> Path:
@@ -119,11 +121,11 @@ def build_and_save_soundtrack(
     t_end = recording.t_end
     if t_end is None:
         t_end = max((float(s.ev.t) for s in event_context), default=0.0)
-
+    #TODO: make the load method only load the samples we actually need based on the rules
     samples = load_sample_bank(samples_dir, target_sr=sr, mono=True)
     engine = AudioEngine(samples, sr=sr)
 
-    keep_prob = make_keep_prob(reject_cfg) if reject_cfg is not None else None
+    reduction_fn = make_keep_prob(reject_cfg) if reject_cfg is not None else None
 
     if rules is None:
         if rules_cfg is not None:
@@ -138,7 +140,12 @@ def build_and_save_soundtrack(
         else:
             rules = make_default_event_sound_rules(sample_map=sample_map)  # update this to return list
 
-    mapper = EventSoundMapper(rules, keep_prob=keep_prob)
+    mapper = EventSoundMapper(
+        one_shot_rules = rules['one_shot'], 
+        beat_song_rules = beat_gated_rules or {},  # update this to accept beat_gated_rules, 
+        reduction_fn=reduction_fn,
+        adaptive_audio_setting=reject_cfg.adaptive_audio_setting if reject_cfg else None,
+    )
 
     audio = build_soundtrack_from_snapshots(
         snapshots=event_context,

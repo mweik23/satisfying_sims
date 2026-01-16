@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
 
@@ -11,6 +12,7 @@ from typing import Optional
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter
+from satisfying_sims.utils.beat_gated_utils import BeatGatedRule
 
 from .renderer import MatplotlibRenderer, RendererConfig
 from satisfying_sims.utils.video_utils import PREVIEW_FFMPEG_ARGS, FINAL_FFMPEG_ARGS
@@ -76,6 +78,47 @@ def select_frames_for_fps(recording: SimulationRecording, fps: int) -> list[Fram
 
     return selected
 
+@dataclass(frozen=True)
+class BeatGatedOverlayRule:
+    event_type: str
+    asset_name: str
+    bpm: float
+    event_filter: dict[str, object] = field(default_factory=dict)
+    gate_mode: str = "to_next_beat"   # or "one_beat_after_last"
+    grace: float = 0.0
+    loop: bool = True
+    enabled: bool = True
+    song_asset_name: Optional[str] = None  
+
+def rules_from_config(
+    cfg: dict[str, dict[str, Any]],
+) -> list[EventSoundRule]:
+    rules = {'one_shot': {}, 'segment': {}}
+    for rule_type, rules_cfg in cfg.items():
+        for key, item in rules_cfg.items():
+            event_type = item["event_type"]
+            asset_name = item["overlay_asset"]
+            event_filter = item.get("event_filter", {}) or {}
+            enabled = bool(item.get("enabled", True))
+            bpm = float(item["bpm"])
+            grace = float(item.get("grace", 0.0))
+            gain = float(item.get("gain", 1.0))
+            loop = bool(item.get("loop", True))
+            song_asset_name = item.get("song_asset_name")
+            gate_mode = item.get("gate_mode", "to_next_beat")
+
+            rules[rule_type][key] = BeatGatedOverlayRule(
+                event_type=event_type,
+                asset_name=asset_name,
+                bpm=bpm,
+                event_filter=event_filter,
+                grace=grace,
+                loop=loop,
+                enabled=enabled,
+                song_asset_name=song_asset_name,
+                gate_mode=gate_mode
+                )
+    return rules
 
 def render_video(
     recording: SimulationRecording,
@@ -84,6 +127,7 @@ def render_video(
     fps: int = 60,
     renderer: MatplotlibRenderer | None = None,
     world_for_boundary: World | None = None,
+    overlay_cfg: list[dict] | None = None,
     bitrate: int | None = None,
     preview: bool = False,
     log_interval: int = 1 #seconds
@@ -134,8 +178,9 @@ def render_video_with_audio(
     bitrate: int | None = None,
     preview: bool = False,
     sample_map: dict[str, Any] | None = None,
-    rules: Optional[Sequence[EventSoundRule]] = None,
-    rules_cfg: list[dict] | None = None,   # your JSON-like list input
+    sound_rules: Optional[Sequence[EventSoundRule]] = None,
+    sound_rules_cfg: list[dict] | None = None,   # your JSON-like list input
+    beat_gated_rules: dict[str, BeatGatedRule] | None = None,
     renderer: MatplotlibRenderer | None = None,
     reject_cfg: Optional[RejectConfig] = None,
 ) -> Path:
@@ -171,8 +216,9 @@ def render_video_with_audio(
         sr=audio_sr,
         tail=audio_tail,
         sample_map=sample_map,
-        rules_cfg=rules_cfg,
-        rules=rules,
+        rules_cfg=sound_rules_cfg,
+        rules=sound_rules,
+        beat_gated_rules=beat_gated_rules,
         reject_cfg=reject_cfg,
     )
 

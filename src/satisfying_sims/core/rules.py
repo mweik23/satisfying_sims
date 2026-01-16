@@ -18,7 +18,9 @@ from .events import (
     BaseEvent,
     CollisionEvent,
     DestroyEvent,
+    HitWallEvent,
     SpawnEvent,
+    matches_filter
 )
 from .shapes import Body, create_circle_body
 from .physics import get_penetration
@@ -414,6 +416,175 @@ class SpawnOnCollision(Rule):
         )
 
         raise ValueError(msg) from original_exc
+
+class SpawnOnWallHit(Rule):
+    def __init__(
+        self,
+        activation_triggers: list[dict] | None = None, 
+        event_filter: dict[str, Any] | None = None,
+        reject_spec: dict[str, float] | None = None,
+        spawn_policy: dict[str, Any] | None = None,
+    ) -> None:
+        
+        self.spawn_policy = spawn_policy or {}
+        self.event_filter = event_filter or {}
+        self.activation_triggers = deque(activation_triggers) if activation_triggers is not None else deque()
+        self.activated = False
+        self.t_last_trigger = 0.0
+        self.trigger_on = None
+        self.trigger_val = None
+        self.update_activation(0.0)
+        reject_cfg = RejectConfig(**reject_spec) if reject_spec is not None else None
+        self.keep_prob_fn = make_keep_prob_gnrl(reject_cfg) if reject_cfg is not None else (lambda lam: 1.0)
+        
+    def update_activation(self, t: float):
+        self.activated = not self.activated
+        self.t_last_trigger = t
+        next_trigger = self.activation_triggers.popleft() if self.activation_triggers else None
+        self.trigger_on = next(iter(next_trigger)) if next_trigger is not None else None
+        self.trigger_val = next_trigger.get(self.trigger_on, None) if next_trigger is not None else None
+          
+    def check_update_activation(self, t: float, n_bodies: int | None = None):
+        if self.trigger_on is None:
+            return
+        if self.trigger_on == "elapsed_time":
+            interval = self.trigger_val
+            if t - self.t_last_trigger >= interval:
+                self.update_activation(t)
+        elif self.trigger_on == "body_count":
+            assert self.activated, "body_count trigger only valid if spawning is active"
+            assert n_bodies is not None, "n_bodies must be provided for body_count trigger"
+            count = self.trigger_val
+            if n_bodies >= count:
+                self.update_activation(t)
+        elif self.trigger_on == "total_time":
+            target_time = self.trigger_val
+            if t >= target_time:
+                self.update_activation(t)
+                
+    
+    def apply(self, world: World, events: List[BaseEvent], dt: float) -> List[BaseEvent]:
+        new_events: List[BaseEvent] = []
+        if not self.activated:
+            return new_events
+        for e in events:
+            if not isinstance(e, HitWallEvent):
+                continue
+            
+            a = world.bodies.get(e.a_id)
+            if a is None:
+                continue
+        
+            if not matches_filter(e, self.event_filter):
+                continue
+            
+            count = world.body_counter.get(a.theme_id, 0)
+            p_accept = self.keep_prob_fn(count)
+            if rng('physics').random() > p_accept:
+                continue
+            # 1) Inherit "what kind of body is this?"
+            props = self._inherit_properties(a)
+            child_radius = props["radius"]
+
+            # 2) Choose where to put it and how it moves
+            pos, vel = self._choose_pos_velocity(world, child_radius, e)
+            if pos is None:
+                # Couldn't find valid placement
+                continue
+            # 3) Actually create the body in the world #TODO: expand to support different kinds of bodies
+            child = create_circle_body(
+                pos=pos, 
+                vel=vel, 
+                radius=child_radius,
+                mass=props["mass"],
+                theme_id=props['theme_id'],
+                appearance_policy=world.appearance_policies[props['theme_id']]
+            ) if props["kind"] == "circle" else None
+        
+            if child is not None:
+                try:
+                    world.add_body(child)
+                except ValueError as ex:
+                    self._raise_spawn_error(child, e, world, ex)
+
+            new_events.append(SpawnEvent(t=world.time, child_id=child.id, child_pos=pos, reason="hit_wall_spawn"))
+
+        return new_events
+
+    def _inherit_properties(self, a: Body) -> dict:
+        """
+        Decide what properties the child should inherit.
+        Default: copy from body A.
+        """
+        #TODO: expand to support different kinds of bodies
+        return {
+            "kind": getattr(a, "kind", "circle"),
+            "radius": a.collider.radius,
+            "mass": a.mass,
+            "color": a.color,
+            "theme_id": a.theme_id
+        }
+    def _choose_pos_velocity(
+        self,
+        world: World,
+        child_radius: float, # TODO: should be bounding radius of child collider when I expand beyond circles
+        e: HitWallEvent,
+    ):
+        """"
+
+        Args:
+            world (World): _description_
+            a (Body): _description_
+            child_radius (float): _description_
+            use_vcm (bool, optional): _description_. Defaults to False.
+
+        Raises:
+            NotImplementedError: _description_
+            NotImplementedError: _description_
+
+        Returns:
+            _type_: _description_
+        """
+
+        if e.wall_idx is None:
+            wall = world.boundary.outer
+        else:
+            wall = world.boundary.walls[e.wall_idx]
+        valid = False
+        i = 0
+        vel=None
+        while not valid:
+            if self.spawn_policy.get('type', None) == 'wall_decides':
+                if hasattr(wall, "sample_spawn_coords"):    
+                    pos, vel = wall.sample_spawn_coords(vel_mag=self.spawn_policy.get("vel_mag", 1.0))
+                    valid = self._valid_child_position(world, pos, child_radius)
+                else:
+                    raise NotImplementedError("Wall does not support spawn coordinate sampling")
+            elif self.spawn_policy.get('type', None) == 'box':
+                x_min, x_max, y_min, y_max = self.spawn_policy.get("box_coords", world.boundary.outer.get_largest_box_inside())
+                pos = rng("physics").uniform(low=[x_min, y_min], high=[x_max, y_max])
+                valid = self._valid_child_position(world, pos, child_radius)
+            i += 1
+            if i > 10:
+                # Give up after 10 tries to find a valid spawn location
+                return None, None
+            if vel is None:
+                vel_mag = self.spawn_policy.get("vel_mag", 0.0)
+                vel_dir = np.array(self.spawn_policy.get("vel_dir", np.array([1.0, 1.0])))
+                vx_sign = rng("physics").choice([-1.0, 1.0])
+                vel_dir[0] *= vx_sign
+                vel = vel_mag * vel_dir / np.linalg.norm(vel_dir)
+        return pos, vel
+
+    def _valid_child_position(self, world: World, child_pos: np.ndarray, child_radius: float) -> bool:
+        inbounds = world.boundary.contains(pos=child_pos, radius=child_radius)
+        overlapping = False
+        for b in world.bodies.values():
+            penetration, _ = get_penetration(child_pos, child_radius, b.pos, b.collider.bounding_radius()) #conservative
+            if penetration is not None and penetration > 0:
+                overlapping = True
+                break
+        return inbounds and not overlapping
 
 class LifetimeDecay(Rule):
     """Decreases body.life each frame; destroys when <= 0."""
