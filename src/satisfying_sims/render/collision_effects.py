@@ -9,36 +9,43 @@ from satisfying_sims.utils.beat_gated_utils import BeatGatedRule
     
 class CollisionEffectRouter:
     def __init__(self, rules: list[CollisionEffectTheme]):
-        self.rules = rules 
-
-    def clear_cache(self) -> None:
+        self.rules = rules
+    def get_layers(self) -> set[int]:
+        return set(t.config.layer for t in self.rules)
+    def clear_cache(self, plot_layer=0) -> None:
         for t in self.rules:
-            t.clear_cache()
-    def check_windows(self, frame_idx: int) -> None:
+            if t.config.layer == plot_layer:
+                t.clear_cache()
+    def check_windows(self, frame_idx: int, plot_layer=0) -> None:
         for t in self.rules:
             if t.config.effect_type == "segment":
-                t.check_windows(frame_idx)
-    def plot_default(self, ax) -> None:
+                if t.config.layer == plot_layer:
+                    t.check_windows(frame_idx)
+                    
+    def plot_default(self, ax, plot_layer=0) -> None:
         for t in self.rules:
-            if t.config.default_frame is not None:
+            if t.config.default_frame is not None and t.config.layer == plot_layer:
                 t.plot_default(ax)
-    def begin_frame(self, frame_idx: int) -> None:
+    def begin_frame(self, frame_idx: int, plot_layer=0) -> None:
         for t in self.rules:
-            t.begin_frame(frame_idx)
+            if t.config.layer == plot_layer:
+                t.begin_frame(frame_idx)
 
-    def ingest_events(self, event_snaps, snapshot, body_static) -> None:
+    def ingest_events(self, event_snaps, snapshot, body_static, plot_layer=0) -> None:
         # Let each theme pick only the types it cares about
         for t in self.rules:
-            if t.config.effect_type != "segment":
+            if t.config.effect_type != "segment" and t.config.layer == plot_layer:
                 t.ingest_events(event_snaps, snapshot, body_static)
 
-    def draw(self, ax, frame_idx: int) -> None:
+    def draw(self, ax, frame_idx: int, plot_layer=0) -> None:
         for t in self.rules:
-            t.draw(ax, frame_idx)
+            if t.config.layer == plot_layer:
+                t.draw(ax, frame_idx)
 
-    def end_frame(self) -> None:
+    def end_frame(self, plot_layer=0) -> None:
         for t in self.rules:
-            t.end_frame()
+            if t.config.layer == plot_layer:
+                t.end_frame()
 
 def build_collision_effect_router(
     one_shot_effects: dict[str, dict[str, Any]] | None,

@@ -5,7 +5,7 @@ sound_rules:
       sample_name: clunck
       gain:
         fn: gain_from_impulse
-        kwargs: {i0: 50, sigma_i: 25, max_factor_log: 0.75, base: 4.0}
+        kwargs: {i0: 50, sigma_i: 25, max_factor_log: 0.75, base: 6.0}
       pitch:
         fn: pitch_from_relative_speed
         kwargs: {v0: 50, sigma_v: 40, max_factor_log: 0.75, base: 1.0}
@@ -14,7 +14,7 @@ sound_rules:
       sample_name: clunck
       gain:
         fn: gain_from_impulse
-        kwargs: {i0: 50, sigma_i: 25, max_factor_log: 0.75, base: 4.0}
+        kwargs: {i0: 50, sigma_i: 25, max_factor_log: 0.75, base: 6.0}
       pitch:
         fn: pitch_from_relative_speed
         kwargs: {v0: 50, sigma_v: 40, max_factor_log: 0.75, base: 1.0}
@@ -22,10 +22,21 @@ sound_rules:
       event_type: HitWallEvent
       sample_name: gentle_ice_impact
       event_filter:
-        wall_idx: [0,1]
+        wall_idx: 0
       gain:
         fn: gain_from_impulse
-        kwargs: {i0: 50, sigma_i: 25, max_factor_log: 0.75, base: 0.2}
+        kwargs: {i0: 50, sigma_i: 25, max_factor_log: 0.75, base: 0.125}
+      pitch:
+        fn: pitch_from_relative_speed
+        kwargs: {v0: 50, sigma_v: 40, max_factor_log: 0.75, base: 1.0}
+    hit_wall_special2:
+      event_type: HitWallEvent
+      sample_name: clunck
+      event_filter:
+        wall_idx: -1
+      gain:
+        fn: gain_from_impulse
+        kwargs: {i0: 50, sigma_i: 25, max_factor_log: 0.75, base: 5.0}
       pitch:
         fn: pitch_from_relative_speed
         kwargs: {v0: 50, sigma_v: 40, max_factor_log: 0.75, base: 1.0}
@@ -35,9 +46,10 @@ sound_rules:
       sample_name: dr_pepper_audio_out
       overlay_name: dr_pepper_video.npz
       bpm: 92
-      size_world: 13
-      position_override: [0.0, 10.0]
+      size_world: 25
+      position_override: [0.0, 0.0]
       gate_mode: one_beat_after_last
       default_frame: 0
+      layer: 1
       event_filter:
         wall_idx: 0

@@ -6,3 +6,4 @@ include:
   - physics_rules.yaml
   - effects.yaml
   - boundary.yaml
+  - overlay_config.yaml

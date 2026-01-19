@@ -88,6 +88,7 @@ class WallStaticSnapshot:
     normal_sign: float
     constrains_domain: bool
     transform_artist: bool
+    layer: int = 0
     init_state: dict[str, Any] = field(default_factory=dict)  # e.g. radius for circular arc
     tags: dict[str, Any] = field(default_factory=dict)
 
@@ -105,7 +106,13 @@ class BoundaryStaticSnapshot:
     """
     outer_kind: str
     outer_attrs: dict[str, Any]
+    outer_layer: int = 0
     inner_walls: dict[int, WallStaticSnapshot] = field(default_factory=dict)
+    
+    def get_layers(self) -> set[int]:
+        layers = {self.outer_layer}
+        layers.update(wall.layer for wall in self.inner_walls.values())
+        return layers
 
 @dataclass
 class BoundaryStateSnapshot:

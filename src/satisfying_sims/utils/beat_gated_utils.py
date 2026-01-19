@@ -88,6 +88,7 @@ class BeatGatedRule:
     background_name: str | None = None
     event_filter: dict[str, object] = field(default_factory=dict)
     size_world: float = 0.3
+    layer: int = 0
     default_frame: int | None = None
     position_override: list[float, float] | None = None
     enabled: bool = True

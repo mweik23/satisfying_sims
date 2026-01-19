@@ -3,9 +3,26 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Tuple
 from dataclasses import dataclass
+import matplotlib as mpl
 
 import numpy as np
 from PIL import Image
+from satisfying_sims.core.boundary import Boundary
+
+def set_background(fig, *, image_path=None, color="black", zorder=-10, green_screen: Tuple[float, float, float] = (24, 185, 18), plot_layer=0):
+    W, H = fig.canvas.get_width_height()
+    if plot_layer > 0:
+        rgb = np.array([c / 255 for c in green_screen])[None, None, :] * np.ones((H, W, 3))  # (H, W, 3) float32 in [0, 1]
+        bg = fig.figimage(rgb, zorder=zorder)
+        return bg
+    if image_path is not None:
+        arr = np.asarray(Image.open(image_path).convert("RGBA"))
+        bg = fig.figimage(arr, zorder=zorder)
+    else:
+        # 1×1 pixel RGB image
+        rgb = np.array(mpl.colors.to_rgb(color))[None, None, :] * np.ones((H, W, 3))  # (H, W, 3) float32 in [0, 1]
+        bg = fig.figimage(rgb, zorder=zorder)
+    return bg
 
 def get_pix_per_world(ax) -> float:
     fig = ax.figure
@@ -31,7 +48,10 @@ def fig_inches_from_pixels(width_px: int | None = None,
     else:
         return figsize_default
 
-def compute_axes_rect(fig, pad: float, world_aspect: float) -> list[float]:
+def compute_axes_rect(fig, pad: float, boundary: Boundary, background_geom = None) -> list[float]:
+        if background_geom is not None:
+            return background_geom.axes_rect()
+        world_aspect = boundary.get_aspect_ratio() if boundary is not None else 1.0
         fig_aspect = fig.get_figwidth() / fig.get_figheight()
         return [
             pad,

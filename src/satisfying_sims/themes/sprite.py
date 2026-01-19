@@ -35,8 +35,9 @@ class SpriteThemeConfig(BodyThemeConfig):
     zorder: int = 5
     interpolation: str = "bilinear"
     origin: str = "upper"
+    layer: int = 0
     rotation_policy: str = "random"  # "point_forward" or "random" set in theme_config_factory.py
-    HUD_text: str = "Body Count: "
+    HUD_text: str = "Balls: "
     
     def make_appearance_policy(self, theme_id) -> "SpriteAppearancePolicy":
         return SpriteAppearancePolicy(
@@ -55,18 +56,6 @@ class SpriteTheme(BodyTheme):
         self.HUD_text = config.HUD_text
 
         #could base preprocessing on sprite geometry, and then rebuild self.sprites with updated prepocessed images
-        self.sprites = self.build_sprite_assets(
-            sprite_paths=config.sprite_paths,
-        )
-
-        self._extent_by_key: dict[str, tuple[float,float,float,float]] = {}
-        for key, asset in self.sprites.items():
-            geom = asset.geom
-            # Map sprite pixel coordinates so that (0,0) is the intended rotation center.
-            # If image array coords are (col=x, row=y), extent units here are "pixels".
-            img = asset.image
-            h, w = img.shape[0], img.shape[1]
-            self._extent_by_key[key] = (-geom.cx_px, w - geom.cx_px, - geom.cy_px, h - geom.cy_px) 
         
         self.zorder = config.zorder
         self.interpolation = config.interpolation
@@ -179,9 +168,11 @@ class SpriteTheme(BodyTheme):
         self._last_pose.clear()
 
     def prepare_for_recording(
-        self, body_static: dict[int, BodyStaticSnapshot] | None = None,
+        self, 
+        body_static: dict[int, BodyStaticSnapshot] | None = None,
         px_per_world: float | None = None,
     ) -> None:
+        
         theme_id = self.config.theme_id
         sprite_keys = list(self.config.sprite_paths.keys())
         #find max radius for this theme_id
@@ -194,6 +185,7 @@ class SpriteTheme(BodyTheme):
  
         else:
             max_render_px = None
+            
         self.sprites = self.build_sprite_assets(
             sprite_paths=self.config.sprite_paths,
             max_render_px=max_render_px

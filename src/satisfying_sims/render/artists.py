@@ -73,13 +73,15 @@ def register_wall_artist(kind: str):
     return deco
 
 
-def build_wall_artist(ax, spec: WallStatic, default_style: dict) -> WallArtist:
+def build_wall_artist(ax, spec: WallStatic, default_style: dict, plot_layer=0) -> WallArtist:
     """
     Create a wall artist ONCE (during figure init).
 
     - Resolves style here so all artists get concrete values (no None/missing semantics inside artists).
     - Chooses a specialized artist if registered, otherwise falls back to a generic sampled-line artist.
     """
+    if plot_layer != spec.layer:
+        return None # Don't build an artist for this wall if it's not on the current plot layer
     # Resolve style once at build time. Artists just consume concrete style.
     resolved_default = dict(default_style) if default_style is not None else {}
     # Allow spec.style to be absent or None.
@@ -156,11 +158,16 @@ def build_circular_arc_artist(ax, spec: WallStatic, resolved_style: dict) -> Wal
     (line,) = ax.plot(x, y, **resolved_style)  # local unit arc
     line.set_clip_on(False)
     class _ArcArtist:
+        def __init__(self):
+            self._last = None
         def update(self, state: WallState, t: float | None = None) -> None:
             p = state.wall_attrs  # per your snapshots
             cx, cy = p["center"]
             r = float(p["radius"])
             theta0 = float(p["angle_start"])
+            key = (cx, cy, r, theta0)
+            if key == self._last:
+                return  # no change, skip transform update
 
             # Similarity transform: unit arc -> world
             T = (
@@ -171,6 +178,7 @@ def build_circular_arc_artist(ax, spec: WallStatic, resolved_style: dict) -> Wal
                 + ax.transData
             )
             line.set_transform(T)
+            self._last = key
 
         def remove(self) -> None:
             line.remove()
@@ -195,8 +203,13 @@ def build_polyline_artist(ax, spec: WallStatic, resolved_style: dict) -> WallArt
     (line,) = ax.plot(pts[:, 0] if pts.size else [], pts[:, 1] if pts.size else [], **resolved_style)
     line.set_clip_on(False)
     class _PolylineArtist:
+        def __init__(self):
+            self._last = None
         def update(self, state: WallState, t: float | None = None) -> None:
             pts2 = np.asarray(state.wall_attrs["points"], dtype=float)
+            if np.array_equal(pts2, self._last):
+                return  # no change, skip set_data
+            self._last = pts2
             line.set_data(pts2[:, 0], pts2[:, 1])
 
         def remove(self) -> None:

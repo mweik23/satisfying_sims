@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
 import shutil
 import subprocess
@@ -125,7 +125,7 @@ def render_video(
     *,
     output_path: str | Path,
     fps: int = 60,
-    renderer: MatplotlibRenderer | None = None,
+    renderers: Iterable[MatplotlibRenderer] | None = None,
     world_for_boundary: World | None = None,
     overlay_cfg: list[dict] | None = None,
     bitrate: int | None = None,
@@ -138,32 +138,36 @@ def render_video(
     Requirements:
         - ffmpeg installed and discoverable by Matplotlib.
     """
-    if renderer is None:
-        renderer = MatplotlibRenderer(RendererConfig(), body_static=recording.body_static)
+    if renderers is None:
+        renderers = [MatplotlibRenderer(RendererConfig(), body_static=recording.body_static)]
 
-    output_path = Path(output_path)
-    writer = FFMpegWriter(
-        fps=fps,
-        metadata={"artist": "satisfying_sims"},
-        bitrate=bitrate,
-        extra_args=PREVIEW_FFMPEG_ARGS if preview else FINAL_FFMPEG_ARGS,
-    )
-
-    renderer._init_figure(world=world_for_boundary)
-
+    output_path_base = Path(output_path)
     frames_to_render = select_frames_for_fps(recording, fps)
-    with writer.saving(renderer.fig, str(output_path), renderer.config.dpi):
-        for idx, frame in enumerate(frames_to_render):
-            renderer.render_snapshot(
-                frame,
-                body_static=recording.body_static,
-                ax=renderer.ax,
-                frame_idx = idx
-            )
-            if (idx+1) % (fps*log_interval) == 0:
-                print(f"Rendered {(idx+1)/fps:.1f} seconds of video...")
-            writer.grab_frame()
-    plt.close(renderer.fig)
+    for renderer in renderers:
+        writer = FFMpegWriter(
+            fps=fps,
+            metadata={"artist": "satisfying_sims"},
+            bitrate=bitrate,
+            extra_args=PREVIEW_FFMPEG_ARGS if preview else FINAL_FFMPEG_ARGS,
+        )
+
+        renderer._init_figure(world=world_for_boundary)
+        if renderer.plot_layer != 0:
+            output_path = output_path_base.with_name(f"{output_path_base.stem}{renderer.plot_layer}{output_path_base.suffix}")
+        else:
+            output_path = output_path_base
+        with writer.saving(renderer.fig, str(output_path), renderer.config.dpi):
+            for idx, frame in enumerate(frames_to_render):
+                renderer.render_snapshot(
+                    frame,
+                    body_static=recording.body_static,
+                    ax=renderer.ax,
+                    frame_idx = idx
+                )
+                if (idx+1) % (fps*log_interval) == 0:
+                    print(f"Rendered {(idx+1)/fps:.1f} seconds of video (layer {renderer.plot_layer})...")
+                writer.grab_frame()
+        plt.close(renderer.fig)
     return output_path
 
 def render_video_with_audio(
@@ -181,7 +185,7 @@ def render_video_with_audio(
     sound_rules: Optional[Sequence[EventSoundRule]] = None,
     sound_rules_cfg: list[dict] | None = None,   # your JSON-like list input
     beat_gated_rules: dict[str, BeatGatedRule] | None = None,
-    renderer: MatplotlibRenderer | None = None,
+    renderers: Iterable[MatplotlibRenderer] | None = None,
     reject_cfg: Optional[RejectConfig] = None,
 ) -> Path:
     """
@@ -204,7 +208,7 @@ def render_video_with_audio(
         world_for_boundary=world_for_boundary,
         bitrate=bitrate,
         preview=preview,
-        renderer=renderer
+        renderers=renderers
     )
 
     # 2) Build soundtrack

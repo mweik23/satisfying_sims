@@ -8,14 +8,16 @@ import shutil
 
 from satisfying_sims.core import run_simulation, SimConfig, make_world, SimStopRestartPolicy, SimAction
 from satisfying_sims.render.collision_effects import build_collision_effect_router
+from satisfying_sims.render.overlay import make_overlay_config
+from satisfying_sims.render.text import TextConfig
 from satisfying_sims.render.video import render_video, render_video_with_audio
 from satisfying_sims.utils.beat_gated_utils import BeatGatedRule, make_beat_gated_rules
 from satisfying_sims.utils.random import seed_all
 from satisfying_sims.utils.cli import build_parser
-from satisfying_sims.render.renderer import MatplotlibRenderer, RendererConfig
+from satisfying_sims.render.renderer import MatplotlibRenderer, RendererConfig, make_renderers
 from satisfying_sims.render.frame_export import select_and_export_frames
 from satisfying_sims.utils.event_rejection import RejectConfig
-from satisfying_sims.render.theme_config_factory import make_body_theme_cfgs
+from satisfying_sims.render.theme_config_factory import make_body_theme_cfgs, make_body_theme_router
 from satisfying_sims.utils.render_utils import find_box_geometry_from_png
 from satisfying_sims.utils.preset_loader import load_preset
 
@@ -56,10 +58,8 @@ def main():
         world_color=args.world_color,
         boundary_color=args.boundary_color,
         show_debug=args.show_debug,
-        theme_configs=body_theme_cfgs,
         background_png=background_png,
         fps=args.frame_rate,
-        overlay_png=str(sprite_dir / args.overlay_png) if args.overlay_png is not None else None,
     )
     
     steps_per_frame = -(-args.physics_rate_request // args.frame_rate)
@@ -138,11 +138,18 @@ def main():
         fps=args.frame_rate
     )
 
-    renderer = MatplotlibRenderer(render_config, 
-                                  body_static=recording.body_static, 
-                                  background_geom=background_geom,
-                                  collision_effects=collision_effects,
-                                  boundary_static=recording.boundary_static)
+    body_themes = make_body_theme_router(body_theme_cfgs, recording.body_static)
+    overlay_cfg = make_overlay_config(loaded.resolved.get('overlay_config', {}), sprite_dir=sprite_dir)
+    renderers = make_renderers(
+        render_config, 
+        body_static=recording.body_static, 
+        background_geom=background_geom,
+        collision_effects=collision_effects,
+        body_themes=body_themes,
+        boundary_static=recording.boundary_static,
+        overlay_cfg=overlay_cfg,
+        text_cfg=TextConfig()
+    )
     # 4. Render video, optionally with audio
     if args.audio_samples_dir is None:
         # Silent video only
@@ -151,7 +158,7 @@ def main():
             output_path=video_path,
             fps=args.frame_rate,
             world_for_boundary=world,
-            renderer=renderer,
+            renderers=renderers,
             preview=args.preview,
         )
     else:
@@ -169,7 +176,7 @@ def main():
             sample_map=args.sample_map,
             sound_rules_cfg=sound_rules_cfg,
             beat_gated_rules=beat_gated_effects,
-            renderer=renderer,
+            renderers=renderers,
             reject_cfg=reject_cfg,
         )
 

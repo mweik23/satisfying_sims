@@ -190,7 +190,7 @@ class CollisionEffectConfig:
     position_override: Optional[list[float, float]] = None  # if set, ignore event position and use this instead
     # when spawning multiple effects same frame, jitter a bit to avoid perfect overlap
     jitter_world: float = 0.0
-
+    layer: int = 0
     # chroma key tuning
     chroma_key: bool = True
     # NEW
@@ -282,6 +282,7 @@ class CollisionEffectTheme:
                     interpolation=self.config.interpolation,
                     zorder=self.config.zorder,
                 )
+                self.default_artist.set_clip_on(False)
     def begin_frame(self, frame_idx: int) -> None:
         self._frame_idx = frame_idx
         for i, a in enumerate(self._artists):
@@ -518,6 +519,7 @@ class CollisionEffectTheme:
                     interpolation=self.config.interpolation,
                     zorder=self.config.zorder,
                 )
+                artist.set_clip_on(False)
                 self._artists[i] = artist
             else:
                 # effect is animated, so data changes each frame

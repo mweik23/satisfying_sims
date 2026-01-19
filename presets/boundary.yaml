@@ -10,9 +10,9 @@ inner_walls:
       center: [0, 0]
       radius: 50
       angle_start: 5
-      delta_angle: 1
+      delta_angle: 1.1
       priority: 1.5
       color: red
       linewidth: 1.0
       animate:
-        angle_start_velocity: 0.3
+        angle_start_velocity: 0.25

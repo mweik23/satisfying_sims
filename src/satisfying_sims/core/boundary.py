@@ -735,6 +735,7 @@ def _wall_idx_of(w: object) -> int:
 
 class Boundary(ABC):
     wall_idx: int
+    layer: int = 0
     
     def contact_circle(self, pos: np.ndarray, radius: float) -> Contact | None:
         return None
@@ -786,6 +787,7 @@ class EllipseBoundary(Boundary):
     b: float  # semi-minor axis
     color: str = "none"
     priority: float = 1.0
+    layer: int = 0
     wall_idx: int = field(init=False, default=-1)
 
     def contact_circle(self, pos: np.ndarray, radius: float) -> Contact | None:
@@ -943,6 +945,7 @@ class BoxBoundary(Boundary):
     height: float
     color: str = "none"
     priority: float = 1.0
+    layer: int = 0
     wall_idx: int = field(init=False, default=-1)
     
     def contact_circle(self, pos: np.ndarray, radius: float) -> Contact | None:
